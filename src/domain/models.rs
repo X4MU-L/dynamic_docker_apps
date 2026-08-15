@@ -1,8 +1,10 @@
+use super::errors::DomainError;
 use arc_swap::ArcSwap;
 use clap::ValueEnum;
 use pingora::lb::selection::{Consistent, Random, RoundRobin};
 use pingora::lb::{Backend, LoadBalancer};
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::sync::Arc;
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Serialize, Deserialize, Copy)]
@@ -53,10 +55,41 @@ pub struct UpstreamRegistrationPayload {
     pub health_endpoint: Option<String>,
 }
 
+impl UpstreamRegistrationPayload {
+    pub fn validate(&self) -> Result<(), DomainError> {
+        if self.ip.parse::<IpAddr>().is_err() {
+            return Err(DomainError::InvalidIpAddress(self.ip.clone()));
+        }
+        if self.port == 0 {
+            return Err(DomainError::InvalidPort(self.port));
+        }
+        if let Some(ref ep) = self.health_endpoint {
+            if !ep.starts_with('/') {
+                return Err(DomainError::InvalidHealthEndpoint(ep.clone()));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamDeregistrationPayload {
     pub ip: String,
     pub port: Option<u16>,
+}
+
+impl UpstreamDeregistrationPayload {
+    pub fn validate(&self) -> Result<(), DomainError> {
+        if self.ip.parse::<IpAddr>().is_err() {
+            return Err(DomainError::InvalidIpAddress(self.ip.clone()));
+        }
+        if let Some(p) = self.port {
+            if p == 0 {
+                return Err(DomainError::InvalidPort(p));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
