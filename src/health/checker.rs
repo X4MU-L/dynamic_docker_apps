@@ -1,20 +1,51 @@
 use crate::domain::models::{BackendItem, DynamicLBState};
 use crate::domain::routing::rebuild_load_balancer;
+use async_trait::async_trait;
+use pingora::server::ShutdownWatch;
+use pingora::services::background::BackgroundService;
 use reqwest::Client;
 use std::time::Duration;
-use tokio::time::sleep;
 
-pub fn start_health_checker(state: DynamicLBState, interval_secs: u64) {
-    tokio::spawn(async move {
+pub struct HealthCheckService {
+    pub state: DynamicLBState,
+    pub interval_secs: u64,
+}
+
+impl HealthCheckService {
+    pub fn new(state: DynamicLBState, interval_secs: u64) -> Self {
+        Self {
+            state,
+            interval_secs,
+        }
+    }
+}
+
+#[async_trait]
+impl BackgroundService for HealthCheckService {
+    async fn start(&self, mut shutdown: ShutdownWatch) {
+        if *shutdown.borrow() {
+            return;
+        }
+
         let client = Client::builder()
             .timeout(Duration::from_secs(2))
             .build()
             .unwrap_or_default();
+
         loop {
-            sleep(Duration::from_secs(interval_secs)).await;
-            run_health_check_cycle(&state, &client).await;
+            tokio::select! {
+                res = shutdown.changed() => {
+                    if res.is_err() || *shutdown.borrow() {
+                        tracing::info!("Health check service shutdown signal received. Exiting...");
+                        break;
+                    }
+                }
+                _ = tokio::time::sleep(Duration::from_secs(self.interval_secs)) => {
+                    run_health_check_cycle(&self.state, &client).await;
+                }
+            }
         }
-    });
+    }
 }
 
 pub async fn run_health_check_cycle(state: &DynamicLBState, client: &Client) {
