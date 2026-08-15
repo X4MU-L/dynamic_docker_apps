@@ -5,3 +5,4 @@ target/
 *.log
 *.txt
 !requirements.txt
+bin/
