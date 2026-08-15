@@ -7,10 +7,9 @@ services:
     container_name: pingora-lb
     ports:
       - "80:80"
-      - "8081:8081"
     networks:
       edge-net:
-        ipv4_address: 172.28.0.2
+        ipv4_address: 172.30.0.2
     environment:
       - PROXY_ADDR=0.0.0.0:80
       - API_ADDR=0.0.0.0:8081
@@ -25,7 +24,7 @@ services:
       - INSTANCE_ID=app-1
     networks:
       edge-net:
-        ipv4_address: 172.28.0.10
+        ipv4_address: 172.30.0.10
 
   sample-app-2:
     profiles: [ "app", "all" ]
@@ -36,7 +35,7 @@ services:
       - INSTANCE_ID=app-2
     networks:
       edge-net:
-        ipv4_address: 172.28.0.11
+        ipv4_address: 172.30.0.11
 
   event-watcher:
     profiles: [ "watcher", "all" ]
@@ -57,4 +56,4 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.28.0.0/16
+        - subnet: 172.30.0.0/16
