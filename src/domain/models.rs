@@ -143,3 +143,54 @@ impl DynamicLBState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_backend_item_defaults() {
+        let item = BackendItem::new("127.0.0.1".to_string(), 8080, None, None);
+        assert_eq!(item.address(), "127.0.0.1:8080");
+        assert_eq!(item.sni_name, "127.0.0.1:8080");
+        assert_eq!(item.health_endpoint, "/health");
+    }
+
+    #[test]
+    fn test_backend_item_explicit() {
+        let item = BackendItem::new(
+            "10.0.0.5".to_string(),
+            9000,
+            Some("custom-sni".to_string()),
+            Some("/custom/health".to_string()),
+        );
+        assert_eq!(item.address(), "10.0.0.5:9000");
+        assert_eq!(item.sni_name, "custom-sni");
+        assert_eq!(item.health_endpoint, "/custom/health");
+    }
+
+    #[test]
+    fn test_payload_validation_success() {
+        let payload = UpstreamRegistrationPayload {
+            ip: "192.168.1.1".to_string(),
+            port: 80,
+            sni_name: None,
+            health_endpoint: Some("/health".to_string()),
+        };
+        assert!(payload.validate().is_ok());
+    }
+
+    #[test]
+    fn test_payload_validation_invalid_health_endpoint() {
+        let payload = UpstreamRegistrationPayload {
+            ip: "192.168.1.1".to_string(),
+            port: 80,
+            sni_name: None,
+            health_endpoint: Some("health".to_string()),
+        };
+        assert_eq!(
+            payload.validate().unwrap_err(),
+            DomainError::InvalidHealthEndpoint("health".to_string())
+        );
+    }
+}

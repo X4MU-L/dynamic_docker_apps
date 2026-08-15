@@ -64,3 +64,22 @@ pub async fn start_api_server(addr: &str, state: DynamicLBState, mut shutdown: S
         tracing::error!("API server error during shutdown: {}", e);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::models::Algorithm;
+
+    #[test]
+    fn test_api_server_service_constructor() {
+        let state = DynamicLBState::new(Algorithm::RoundRobin);
+        let svc = ApiServerService::new("127.0.0.1:8081".to_string(), state);
+        assert_eq!(svc.api_addr, "127.0.0.1:8081");
+    }
+
+    #[test]
+    fn test_create_router_binding() {
+        let state = DynamicLBState::new(Algorithm::RoundRobin);
+        let _router = create_router(state);
+    }
+}

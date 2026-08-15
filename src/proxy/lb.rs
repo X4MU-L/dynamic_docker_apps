@@ -49,3 +49,24 @@ impl ProxyHttp for DynamicProxy {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::models::{BackendItem, DynamicLBState};
+    use crate::domain::routing::register_upstream;
+
+    #[test]
+    fn test_proxy_selects_peer_with_sni() {
+        let state = DynamicLBState::new(Algorithm::RoundRobin);
+        let item = BackendItem::new("127.0.0.1".to_string(), 9000, Some("backend-1".to_string()), None);
+        let _ = register_upstream(&state, item);
+
+        let proxy = DynamicProxy::new(state);
+        let selected = select_backend(&proxy.state, b"");
+        assert!(selected.is_some());
+        let (backend, sni) = selected.unwrap();
+        assert_eq!(backend.addr.to_string(), "127.0.0.1:9000");
+        assert_eq!(sni, "backend-1");
+    }
+}

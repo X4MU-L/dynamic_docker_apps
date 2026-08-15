@@ -43,3 +43,24 @@ impl IntoResponse for DomainError {
         (status, body).into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_domain_error_display_formatting() {
+        let err = DomainError::InvalidIpAddress("bad-ip".to_string());
+        assert_eq!(err.to_string(), "Invalid IP address format: 'bad-ip'");
+
+        let conflict = DomainError::BackendAlreadyExists("127.0.0.1:8080".to_string());
+        assert_eq!(conflict.to_string(), "Backend already registered: '127.0.0.1:8080'");
+    }
+
+    #[test]
+    fn test_domain_error_into_response_status() {
+        let err = DomainError::BackendNotFound("10.0.0.1:8080".to_string());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+}
