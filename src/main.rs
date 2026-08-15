@@ -1,5 +1,6 @@
 pub mod api;
 pub mod domain;
+pub mod health;
 pub mod proxy;
 pub mod utils;
 
@@ -18,8 +19,29 @@ fn main() {
     );
 
     let state = DynamicLBState::new(config.algorithm);
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create Tokio runtime");
+
+    let _guard = rt.enter();
+    spawn_api_and_health_services(&config, state.clone(), &rt);
 
     run_pingora_server(config.proxy_addr, state);
+}
+
+fn spawn_api_and_health_services(
+    config: &AppConfig,
+    state: DynamicLBState,
+    rt: &tokio::runtime::Runtime,
+) {
+    let api_state = state.clone();
+    let api_addr = config.api_addr.clone();
+    rt.spawn(async move {
+        api::server::start_api_server(&api_addr, api_state).await;
+    });
+
+    health::checker::start_health_checker(state, config.health_check_interval_secs);
 }
 
 fn run_pingora_server(proxy_addr: String, state: DynamicLBState) {
