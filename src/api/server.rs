@@ -3,11 +3,32 @@ use crate::api::handlers::{
     register_upstream_handler,
 };
 use crate::domain::models::DynamicLBState;
+use async_trait::async_trait;
 use axum::{
     routing::{delete, get, post},
     Router,
 };
+use pingora::server::ShutdownWatch;
+use pingora::services::background::BackgroundService;
 use tokio::net::TcpListener;
+
+pub struct ApiServerService {
+    pub api_addr: String,
+    pub state: DynamicLBState,
+}
+
+impl ApiServerService {
+    pub fn new(api_addr: String, state: DynamicLBState) -> Self {
+        Self { api_addr, state }
+    }
+}
+
+#[async_trait]
+impl BackgroundService for ApiServerService {
+    async fn start(&self, shutdown: ShutdownWatch) {
+        start_api_server(&self.api_addr, self.state.clone(), shutdown).await;
+    }
+}
 
 pub fn create_router(state: DynamicLBState) -> Router {
     Router::new()
@@ -18,7 +39,7 @@ pub fn create_router(state: DynamicLBState) -> Router {
         .with_state(state)
 }
 
-pub async fn start_api_server(addr: &str, state: DynamicLBState) {
+pub async fn start_api_server(addr: &str, state: DynamicLBState, mut shutdown: ShutdownWatch) {
     let app = create_router(state);
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => l,
@@ -28,7 +49,18 @@ pub async fn start_api_server(addr: &str, state: DynamicLBState) {
         }
     };
     tracing::info!("Internal Control API listening on http://{}", addr);
-    if let Err(e) = axum::serve(listener, app).await {
-        tracing::error!("API server error: {}", e);
+
+    let shutdown_signal = async move {
+        loop {
+            let res = shutdown.changed().await;
+            if res.is_err() || *shutdown.borrow() {
+                tracing::info!("API server received shutdown signal. Exiting gracefully...");
+                break;
+            }
+        }
+    };
+
+    if let Err(e) = axum::serve(listener, app).with_graceful_shutdown(shutdown_signal).await {
+        tracing::error!("API server error during shutdown: {}", e);
     }
 }
