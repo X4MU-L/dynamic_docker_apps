@@ -1,6 +1,6 @@
 use arc_swap::ArcSwap;
 use clap::ValueEnum;
-use pingora::lb::selection::RoundRobin;
+use pingora::lb::selection::{Consistent, Random, RoundRobin};
 use pingora::lb::{Backend, LoadBalancer};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -62,6 +62,35 @@ pub struct UpstreamDeregistrationPayload {
 #[derive(Clone)]
 pub enum DynamicLb {
     RoundRobin(Arc<LoadBalancer<RoundRobin>>),
+    Random(Arc<LoadBalancer<Random>>),
+    Consistent(Arc<LoadBalancer<Consistent>>),
+}
+
+impl DynamicLb {
+    pub fn new(algo: Algorithm, backends: Vec<Backend>) -> Self {
+        match algo {
+            Algorithm::RoundRobin => {
+                let lb = LoadBalancer::try_from_iter(backends).unwrap();
+                DynamicLb::RoundRobin(Arc::new(lb))
+            }
+            Algorithm::Random => {
+                let lb = LoadBalancer::try_from_iter(backends).unwrap();
+                DynamicLb::Random(Arc::new(lb))
+            }
+            Algorithm::Consistent => {
+                let lb = LoadBalancer::try_from_iter(backends).unwrap();
+                DynamicLb::Consistent(Arc::new(lb))
+            }
+        }
+    }
+
+    pub fn select(&self, key: &[u8], max_retries: usize) -> Option<Backend> {
+        match self {
+            DynamicLb::RoundRobin(lb) => lb.select(key, max_retries),
+            DynamicLb::Random(lb) => lb.select(key, max_retries),
+            DynamicLb::Consistent(lb) => lb.select(key, max_retries),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -73,9 +102,7 @@ pub struct DynamicLBState {
 
 impl DynamicLBState {
     pub fn new(algorithm: Algorithm) -> Self {
-        let backends = vec!["127.0.0.1:8081", "127.0.0.1:8082", "127.0.0.1:8083"];
-        let lb = LoadBalancer::try_from_iter(backends).unwrap();
-        let initial_lb: DynamicLb = DynamicLb::RoundRobin(Arc::new(lb));
+        let initial_lb = DynamicLb::new(algorithm, Vec::new());
         Self {
             algorithm,
             items: Arc::new(ArcSwap::from_pointee(Vec::new())),
