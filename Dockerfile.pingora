@@ -1,0 +1,30 @@
+FROM rust:latest AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    cmake \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/dynamic_docker_apps
+COPY Cargo.toml ./
+# Create dummy src/main.rs to cache dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release
+RUN rm -rf src
+
+COPY src ./src
+RUN touch src/main.rs
+RUN cargo build --release
+
+# Runtime stage using rust:latest base (guarantees local image availability & glibc match)
+FROM rust:latest
+
+WORKDIR /app
+COPY --from=builder /usr/src/dynamic_docker_apps/target/release/dynamic_docker_apps /app/dynamic_docker_apps
+
+EXPOSE 80 8081
+ENV RUST_LOG=info
+
+CMD ["/app/dynamic_docker_apps"]

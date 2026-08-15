@@ -1,0 +1,57 @@
+services:
+  pingora-lb:
+    profiles: [ "lb", "all", "default" ]
+    build:
+      context: .
+      dockerfile: Dockerfile.pingora
+    container_name: pingora-lb
+    ports:
+      - "80:80"
+      - "8081:8081"
+    networks:
+      edge-net:
+        ipv4_address: 172.28.0.2
+    environment:
+      - PROXY_ADDR=0.0.0.0:80
+      - API_ADDR=0.0.0.0:8081
+      - HEALTH_CHECK_INTERVAL_SECS=5
+
+  sample-app-1:
+    profiles: [ "app", "all" ]
+    build:
+      context: ./sample_app
+    container_name: sample-app-1
+    environment:
+      - INSTANCE_ID=app-1
+    networks:
+      edge-net:
+        ipv4_address: 172.28.0.10
+
+  sample-app-2:
+    profiles: [ "app", "all" ]
+    build:
+      context: ./sample_app
+    container_name: sample-app-2
+    environment:
+      - INSTANCE_ID=app-2
+    networks:
+      edge-net:
+        ipv4_address: 172.28.0.11
+
+  event-watcher:
+    profiles: [ "watcher", "all" ]
+    build:
+      context: .
+      dockerfile: Dockerfile.pingora
+    entrypoint: [ "/app/bin/deployer", "--api-url", "http://pingora-lb:8081", "watch", "--network", "edge-net" ]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - edge-net
+    depends_on:
+      - pingora-lb
+
+networks:
+  edge-net:
+    name: edge-net
+    external: true
