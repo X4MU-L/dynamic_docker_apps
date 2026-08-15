@@ -1,0 +1,63 @@
+package domain
+
+import (
+	"fmt"
+	"math/rand"
+	"time"
+)
+
+type DeploymentConfig struct {
+	ContextPath    string
+	Name           string
+	Network        string
+	Port           int
+	HealthEndpoint string
+	TimeoutSecs    int
+}
+
+type UpstreamTarget struct {
+	IP             string `json:"ip"`
+	Port           int    `json:"port"`
+	SNIName        string `json:"sni_name,omitempty"`
+	HealthEndpoint string `json:"health_endpoint,omitempty"`
+}
+
+type BackendItem struct {
+	IP             string `json:"ip"`
+	Port           int    `json:"port"`
+	SNIName        string `json:"sni_name"`
+	HealthEndpoint string `json:"health_endpoint"`
+}
+
+type APIErrorResponse struct {
+	Error string `json:"error"`
+	Code  int    `json:"code"`
+}
+
+func NewUpstreamTarget(ip string, port int, sni string, health string) UpstreamTarget {
+	if sni == "" {
+		sni = ip
+	}
+	if health == "" {
+		health = "/health"
+	}
+	return UpstreamTarget{
+		IP:             ip,
+		Port:           port,
+		SNIName:        sni,
+		HealthEndpoint: health,
+	}
+}
+
+func GenerateContainerName(prefix string) string {
+	if prefix == "" {
+		prefix = "app"
+	}
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 6)
+	for i := range b {
+		b[i] = charset[r.Intn(len(charset))]
+	}
+	return fmt.Sprintf("%s-%s", prefix, string(b))
+}
