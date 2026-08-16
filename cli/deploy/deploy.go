@@ -17,30 +17,59 @@ func ExecuteDeployment(config domain.DeploymentConfig, apiURL string) (string, e
 		return "", err
 	}
 
-	containerName := strings.ToLower(config.Name)
-	if containerName == "" {
-		containerName = domain.GenerateContainerName("app")
+	baseName := strings.ToLower(config.Name)
+	if baseName == "" {
+		baseName = domain.GenerateContainerName("app")
 	}
-	if docker_utils.ContainerExists(containerName) {
-		return "", fmt.Errorf("container '%s' is already running in Docker", containerName)
+
+	imageTag, err := prepareImage(config, baseName)
+	if err != nil {
+		return "", err
+	}
+
+	return deployReplicas(config, apiURL, imageTag, baseName)
+}
+
+func deployReplicas(config domain.DeploymentConfig, apiURL, imageTag, baseName string) (string, error) {
+	replicas := config.Replicas
+	if replicas < 1 {
+		replicas = 1
+	}
+
+	var deployed []string
+	for i := 1; i <= replicas; i++ {
+		instanceName := baseName
+		if replicas > 1 {
+			instanceName = fmt.Sprintf("%s-%d", baseName, i)
+		}
+
+		if err := deploySingleInstance(config, apiURL, imageTag, instanceName); err != nil {
+			logger.Error("Failed to deploy replica '%s': %v", instanceName, err)
+			return "", err
+		}
+		deployed = append(deployed, instanceName)
+	}
+
+	logger.Success("Deployment complete: %d replica(s) [%s] active and routing.", len(deployed), strings.Join(deployed, ", "))
+	return baseName, nil
+}
+
+func deploySingleInstance(config domain.DeploymentConfig, apiURL, imageTag, instanceName string) error {
+	if docker_utils.ContainerExists(instanceName) {
+		return fmt.Errorf("container '%s' is already running in Docker", instanceName)
 	}
 
 	domainSuffix := strings.ToLower(config.DomainSuffix)
 	if domainSuffix == "" {
 		domainSuffix = domain.DefaultDomainSuffix
 	}
-	hostname := fmt.Sprintf("%s.%s", containerName, domainSuffix)
+	hostname := fmt.Sprintf("%s.%s", instanceName, domainSuffix)
 
-	imageTag, err := prepareImage(config, containerName)
-	if err != nil {
-		return "", err
+	if err := docker_utils.RunContainer(imageTag, instanceName, hostname, config.Network); err != nil {
+		return err
 	}
 
-	if err := docker_utils.RunContainer(imageTag, containerName, hostname, config.Network); err != nil {
-		return "", err
-	}
-
-	return registerAndCompleteDeployment(config, apiURL, containerName)
+	return registerAndCompleteDeployment(config, apiURL, instanceName)
 }
 
 func prepareImage(config domain.DeploymentConfig, containerName string) (string, error) {
@@ -58,31 +87,28 @@ func prepareImage(config domain.DeploymentConfig, containerName string) (string,
 	return imageTag, nil
 }
 
-func registerAndCompleteDeployment(config domain.DeploymentConfig, apiURL, containerName string) (string, error) {
-	ipAddress, err := docker_utils.ExtractContainerIP(containerName, config.Network)
+func registerAndCompleteDeployment(config domain.DeploymentConfig, apiURL, instanceName string) error {
+	ipAddress, err := docker_utils.ExtractContainerIP(instanceName, config.Network)
 	if err != nil {
-		docker_utils.StopAndRemoveContainer(containerName)
-		return "", err
+		docker_utils.StopAndRemoveContainer(instanceName)
+		return err
 	}
-	logger.Info("Assigned container IP: %s", ipAddress)
 
-	stepHealth := logger.StartStep("Probing readiness health for %s:%d%s...", ipAddress, config.Port, config.HealthEndpoint)
+	stepHealth := logger.StartStep("Probing readiness health for %s (%s:%d)...", instanceName, ipAddress, config.Port)
 	if !health.WaitForReadiness(config.Network, ipAddress, config.Port, config.HealthEndpoint, config.TimeoutSecs) {
-		stepHealth.FinishError("Readiness health probe failed for %s", containerName)
-		docker_utils.StopAndRemoveContainer(containerName)
-		return "", fmt.Errorf("container %s failed health probe", containerName)
+		stepHealth.FinishError("Readiness health probe failed for %s", instanceName)
+		docker_utils.StopAndRemoveContainer(instanceName)
+		return fmt.Errorf("container %s failed health probe", instanceName)
 	}
-	stepHealth.FinishSuccess("Container %s is healthy.", containerName)
+	stepHealth.FinishSuccess("Container %s is healthy.", instanceName)
 
-	target := domain.NewUpstreamTarget(ipAddress, config.Port, containerName, config.DomainSuffix, config.HealthEndpoint)
-	stepReg := logger.StartStep("Registering %s (Hostname: %s) with Pingora LB...", containerName, target.SNIName)
+	target := domain.NewUpstreamTarget(ipAddress, config.Port, instanceName, config.DomainSuffix, config.HealthEndpoint)
+	stepReg := logger.StartStep("Registering %s (Hostname: %s) with Pingora LB...", instanceName, target.SNIName)
 	if err := api_utils.RegisterUpstream(apiURL, target); err != nil {
-		stepReg.FinishError("Pingora LB registration failed for %s", containerName)
-		docker_utils.StopAndRemoveContainer(containerName)
-		return "", err
+		stepReg.FinishError("Pingora LB registration failed for %s", instanceName)
+		docker_utils.StopAndRemoveContainer(instanceName)
+		return err
 	}
-	stepReg.FinishSuccess("Registered '%s' (Hostname: %s) with Pingora LB.", containerName, target.SNIName)
-
-	logger.Success("Deployment complete: '%s' (Hostname: %s) is active and routing.", containerName, target.SNIName)
-	return containerName, nil
+	stepReg.FinishSuccess("Registered '%s' (Hostname: %s) with Pingora LB.", instanceName, target.SNIName)
+	return nil
 }

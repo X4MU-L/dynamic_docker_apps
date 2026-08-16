@@ -9,10 +9,8 @@ import (
 const DefaultDomainSuffix = "edge.local"
 
 type DeploymentConfig struct {
-	ContextPath string
-	// image name if image is used
-	Image string
-	// allow for password and username for private images
+	ContextPath    string
+	Image          string
 	Username       string
 	Password       string
 	Name           string
@@ -21,6 +19,7 @@ type DeploymentConfig struct {
 	Port           int
 	HealthEndpoint string
 	TimeoutSecs    int
+	Replicas       int
 }
 
 type UpstreamTarget struct {
