@@ -35,15 +35,7 @@ func CheckApiServerHealth(apiURL string) error {
 }
 
 func checkHealthViaDockerExec(endpoint string) error {
-	pyScript := fmt.Sprintf(`import urllib.request, sys
-try:
-    resp = urllib.request.urlopen('%s')
-    sys.exit(0 if resp.status == 200 else 1)
-except Exception as e:
-    sys.stderr.write(str(e))
-    sys.exit(1)`, endpoint)
-
-	pyCmd := strings.ReplaceAll(pyScript, "\n", "; ")
+	pyCmd := fmt.Sprintf("import urllib.request, sys; resp = urllib.request.urlopen('%s'); sys.exit(0 if resp.status == 200 else 1)", endpoint)
 	out, err := runner.RunCommand("docker", "exec", "pingora-lb", "python3", "-c", pyCmd)
 	if err != nil {
 		return parseDockerError(string(out), err)
@@ -68,20 +60,19 @@ func sendApiRequestViaDockerExec(url, method string, payload interface{}) ([]byt
 	payloadStr := strings.ReplaceAll(string(jsonBytes), "\"", "\\\"")
 
 	pyScript := fmt.Sprintf(`import urllib.request, urllib.error, sys
+data = """%s""".encode() if """%s""" != "null" else None
+req = urllib.request.Request('%s', data=data, headers={'Content-Type':'application/json'}, method='%s')
 try:
-    data = """%s""".encode() if """%s""" != "null" else None
-    req = urllib.request.Request('%s', data=data, headers={'Content-Type':'application/json'}, method='%s')
     with urllib.request.urlopen(req) as resp:
         print(resp.read().decode())
 except urllib.error.HTTPError as e:
-    sys.stderr.write(f"HTTP_ERROR:{e.code}:"+e.read().decode())
+    sys.stderr.write("HTTP_ERROR:" + str(e.code) + ":" + e.read().decode())
     sys.exit(1)
 except Exception as e:
-    sys.stderr.write(f"URL_ERROR:{str(e)}")
+    sys.stderr.write("URL_ERROR:" + str(e))
     sys.exit(1)`, payloadStr, payloadStr, url, method)
 
-	pyCmd := strings.ReplaceAll(pyScript, "\n", "; ")
-	out, err := runner.RunCommand("docker", "exec", "pingora-lb", "python3", "-c", pyCmd)
+	out, err := runner.RunCommand("docker", "exec", "pingora-lb", "python3", "-c", pyScript)
 	if err != nil {
 		return nil, parseExecOutputError(string(out))
 	}

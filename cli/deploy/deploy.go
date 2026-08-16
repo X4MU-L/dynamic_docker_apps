@@ -55,9 +55,10 @@ func deployReplicas(config domain.DeploymentConfig, apiURL, imageTag, baseName s
 }
 
 func deploySingleInstance(config domain.DeploymentConfig, apiURL, imageTag, instanceName string) error {
-	if docker_utils.ContainerExists(instanceName) {
-		return fmt.Errorf("container '%s' is already running in Docker", instanceName)
+	if docker_utils.ContainerIsRunning(instanceName) {
+		return fmt.Errorf("container '%s' is already actively running in Docker", instanceName)
 	}
+	docker_utils.CleanupStoppedContainer(instanceName)
 
 	domainSuffix := strings.ToLower(config.DomainSuffix)
 	if domainSuffix == "" {

@@ -15,6 +15,22 @@ func ContainerExists(containerName string) bool {
 	return cmd.Run() == nil
 }
 
+func ContainerIsRunning(containerName string) bool {
+	cmd := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", containerName)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "true"
+}
+
+func CleanupStoppedContainer(containerName string) {
+	if ContainerExists(containerName) && !ContainerIsRunning(containerName) {
+		logger.Info("Cleaning up stopped container '%s'...", containerName)
+		StopAndRemoveContainer(containerName)
+	}
+}
+
 func LocalImageExists(imageTag string) bool {
 	cmd := exec.Command("docker", "image", "inspect", imageTag)
 	return cmd.Run() == nil
