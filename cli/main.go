@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"dynamic_docker_apps/cli/api_utils"
 	"dynamic_docker_apps/cli/deploy"
@@ -80,7 +81,7 @@ func handleDeploy(args []string, defaultApi string) {
 }
 
 func handleDeregister(args []string, defaultApi string) {
-	name, ip, port, stopContainer, network, apiURL, err := parser.ParseDeregisterFlags(args, defaultApi)
+	name, ip, port, stopContainer, drainTimeout, network, apiURL, err := parser.ParseDeregisterFlags(args, defaultApi)
 	if err == flag.ErrHelp {
 		os.Exit(0)
 	}
@@ -89,13 +90,44 @@ func handleDeregister(args []string, defaultApi string) {
 	}
 
 	targetIP, targetName := resolveTargetInfo(name, ip, network)
-	if err := api_utils.DeregisterUpstream(apiURL, targetIP, port); err != nil {
-		logger.Fatal("Deregistration failed: %v", err)
-	}
-	logger.Success("Deregistered backend IP %s", targetIP)
+	executeDeregistration(apiURL, targetIP, port, drainTimeout)
 
 	if stopContainer {
+		if drainTimeout > 0 {
+			waitForBackendDrain(apiURL, targetIP, port)
+		}
 		stopTargetContainer(targetName, targetIP)
+	}
+}
+
+func executeDeregistration(apiURL, targetIP string, port, drainTimeout int) {
+	if drainTimeout > 0 {
+		if err := api_utils.DrainUpstream(apiURL, targetIP, port, "", drainTimeout); err != nil {
+			logger.Fatal("Draining failed: %v", err)
+		}
+		logger.Info("Initiated graceful draining for backend IP %s (timeout: %ds)", targetIP, drainTimeout)
+	} else {
+		if err := api_utils.DeregisterUpstream(apiURL, targetIP, port); err != nil {
+			logger.Fatal("Deregistration failed: %v", err)
+		}
+		logger.Success("Forcefully deregistered backend IP %s", targetIP)
+	}
+}
+
+func waitForBackendDrain(apiURL, targetIP string, port int) {
+	step := logger.StartStep("Waiting for Pingora LB to drain active requests for IP %s...", targetIP)
+	for {
+		st, err := api_utils.GetUpstreamStatus(apiURL, targetIP, port, "")
+		if err != nil {
+			step.FinishSuccess("Backend IP %s fully evicted from Pingora LB.", targetIP)
+			break
+		}
+		rem := 0
+		if st.RemainingDrainSecs != nil {
+			rem = *st.RemainingDrainSecs
+		}
+		step.UpdateStream(fmt.Sprintf("Status: %s | Active Requests: %d | Remaining Drain: %ds", st.Status, st.ActiveRequests, rem))
+		time.Sleep(1 * time.Second)
 	}
 }
 

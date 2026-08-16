@@ -36,6 +36,16 @@ type BackendItem struct {
 	HealthEndpoint string `json:"health_endpoint"`
 }
 
+type BackendStatusResponse struct {
+	IP                 string `json:"ip"`
+	Port               int    `json:"port"`
+	SNIName            string `json:"sni_name"`
+	HealthEndpoint     string `json:"health_endpoint"`
+	Status             string `json:"status"`
+	ActiveRequests     int    `json:"active_requests"`
+	RemainingDrainSecs *int   `json:"remaining_drain_secs"`
+}
+
 type APIErrorResponse struct {
 	Error string `json:"error"`
 	Code  int    `json:"code"`

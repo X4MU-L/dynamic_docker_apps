@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"strings"
 
@@ -51,8 +52,8 @@ func sendApiRequest(apiURL, method, path string, payload interface{}) ([]byte, e
 	if !strings.HasPrefix(formattedPath, "/") {
 		formattedPath = "/" + formattedPath
 	}
-	url := fmt.Sprintf("%s%s", strings.TrimRight(apiURL, "/"), formattedPath)
-	return sendApiRequestViaDockerExec(url, method, payload)
+	fullURL := fmt.Sprintf("%s%s", strings.TrimRight(apiURL, "/"), formattedPath)
+	return sendApiRequestViaDockerExec(fullURL, method, payload)
 }
 
 func sendApiRequestViaDockerExec(url, method string, payload interface{}) ([]byte, error) {
@@ -122,6 +123,47 @@ func DeregisterUpstream(apiURL string, ip string, port int) error {
 	}
 	_, err := sendApiRequest(apiURL, http.MethodDelete, "/upstreams", payload)
 	return err
+}
+
+func DrainUpstream(apiURL string, ip string, port int, sni string, timeoutSecs int) error {
+	payload := map[string]interface{}{
+		"drain_timeout_secs": timeoutSecs,
+	}
+	if ip != "" {
+		payload["ip"] = ip
+	}
+	if port > 0 {
+		payload["port"] = port
+	}
+	if sni != "" {
+		payload["sni_name"] = sni
+	}
+	_, err := sendApiRequest(apiURL, http.MethodPost, "/upstreams/drain", payload)
+	return err
+}
+
+func GetUpstreamStatus(apiURL string, ip string, port int, sni string) (domain.BackendStatusResponse, error) {
+	params := url.Values{}
+	if ip != "" {
+		params.Set("ip", ip)
+	}
+	if port > 0 {
+		params.Set("port", fmt.Sprintf("%d", port))
+	}
+	if sni != "" {
+		params.Set("sni", sni)
+	}
+	path := fmt.Sprintf("/upstreams/status?%s", params.Encode())
+
+	data, err := sendApiRequest(apiURL, http.MethodGet, path, nil)
+	if err != nil {
+		return domain.BackendStatusResponse{}, err
+	}
+	var res domain.BackendStatusResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		return domain.BackendStatusResponse{}, err
+	}
+	return res, nil
 }
 
 func ListUpstreams(apiURL string) (string, error) {
