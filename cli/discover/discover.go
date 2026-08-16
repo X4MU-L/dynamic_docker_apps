@@ -48,7 +48,7 @@ func listRunningContainers() ([]string, error) {
 	var names []string
 	for _, l := range lines {
 		trimmed := strings.TrimSpace(l)
-		if trimmed != "" && !strings.Contains(trimmed, "pingora-lb") {
+		if trimmed != "" && (!strings.Contains(trimmed, "pingora-lb") && !strings.Contains(trimmed, "pingora-discover")) {
 			names = append(names, trimmed)
 		}
 	}

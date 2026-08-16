@@ -63,7 +63,7 @@ services:
         ipv4_address: 172.30.0.11
 
   event-watcher:
-    profiles: [ "watcher", "all" ]
+    profiles: [ "watcher" ]
     build:
       context: .
       dockerfile: Dockerfile.pingora
