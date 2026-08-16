@@ -4,7 +4,8 @@ use clap::ValueEnum;
 use pingora::lb::selection::{Consistent, Random, RoundRobin};
 use pingora::lb::{Backend, LoadBalancer};
 use serde::{Deserialize, Serialize};
-use std::net::IpAddr;
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -27,7 +28,7 @@ pub enum BackendStatus {
 pub struct BackendItem {
     pub ip: String,
     pub port: u16,
-    pub sni_name: String,
+    pub sni_name: Arc<str>,
     pub health_endpoint: String,
     pub status: BackendStatus,
     pub active_requests: Arc<AtomicUsize>,
@@ -36,10 +37,11 @@ pub struct BackendItem {
 
 impl BackendItem {
     pub fn new(ip: String, port: u16, sni_name: String, health_endpoint: Option<String>) -> Self {
+        let normalized_sni: Arc<str> = sni_name.trim().to_lowercase().into();
         Self {
             ip,
             port,
-            sni_name: sni_name.to_lowercase(),
+            sni_name: normalized_sni,
             health_endpoint: health_endpoint.unwrap_or_else(|| "/health".to_string()),
             status: BackendStatus::Active,
             active_requests: Arc::new(AtomicUsize::new(0)),
@@ -49,6 +51,10 @@ impl BackendItem {
 
     pub fn address(&self) -> String {
         format!("{}:{}", self.ip, self.port)
+    }
+
+    pub fn socket_addr(&self) -> Option<SocketAddr> {
+        self.address().parse::<SocketAddr>().ok()
     }
 
     pub fn to_pingora_backend(&self) -> Option<Backend> {
@@ -70,10 +76,10 @@ impl BackendItem {
         BackendStatusResponse {
             ip: self.ip.clone(),
             port: self.port,
-            sni_name: self.sni_name.clone(),
+            sni_name: self.sni_name.to_string(),
             health_endpoint: self.health_endpoint.clone(),
             status: self.status,
-            active_requests: self.active_requests.load(Ordering::SeqCst),
+            active_requests: self.active_requests.load(Ordering::Relaxed),
             remaining_drain_secs: self.remaining_drain_secs(),
         }
     }
@@ -206,6 +212,7 @@ impl DynamicLb {
 pub struct DynamicLBState {
     pub algorithm: Algorithm,
     pub items: Arc<ArcSwap<Vec<BackendItem>>>,
+    pub by_addr: Arc<ArcSwap<HashMap<SocketAddr, BackendItem>>>,
     pub lb: Arc<ArcSwap<DynamicLb>>,
 }
 
@@ -215,6 +222,7 @@ impl DynamicLBState {
         Self {
             algorithm,
             items: Arc::new(ArcSwap::from_pointee(Vec::new())),
+            by_addr: Arc::new(ArcSwap::from_pointee(HashMap::new())),
             lb: Arc::new(ArcSwap::new(Arc::new(initial_lb))),
         }
     }
@@ -233,8 +241,9 @@ mod tests {
             Some("/custom/health".to_string()),
         );
         assert_eq!(item.address(), "10.0.0.5:9000");
-        assert_eq!(item.sni_name, "app-1.edge.local");
+        assert_eq!(&*item.sni_name, "app-1.edge.local");
         assert_eq!(item.status, BackendStatus::Active);
+        assert!(item.socket_addr().is_some());
     }
 
     #[test]

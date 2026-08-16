@@ -67,7 +67,7 @@ pub async fn drain_upstream_handler(
             "status": "draining",
             "ip": item.ip,
             "port": item.port,
-            "sni_name": item.sni_name,
+            "sni_name": &*item.sni_name,
             "drain_timeout_secs": timeout
         })),
     ))
@@ -126,7 +126,7 @@ mod tests {
         assert!(selected.is_some());
         let (backend, sni) = selected.unwrap();
         assert_eq!(backend.addr.to_string(), "10.0.0.1:8080");
-        assert_eq!(sni, "test-sni.edge.local");
+        assert_eq!(&*sni, "test-sni.edge.local");
     }
 
     #[tokio::test]

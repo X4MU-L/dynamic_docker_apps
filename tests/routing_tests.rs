@@ -19,7 +19,7 @@ fn test_register_and_select_backend_round_robin() {
 
     let (backend, sni) = select_backend(&state, b"").expect("Backend should be selected");
     assert_eq!(backend.addr.to_string(), "172.28.0.2:8080");
-    assert_eq!(sni, "app-1.edge.local");
+    assert_eq!(&*sni, "app-1.edge.local");
 }
 
 #[test]

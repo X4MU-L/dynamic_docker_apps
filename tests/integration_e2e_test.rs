@@ -30,7 +30,7 @@ async fn test_full_e2e_flow_registration_routing_deregistration() {
 
     let (backend, sni) = select_backend(&state, b"").expect("Backend should be registered");
     assert_eq!(backend.addr.to_string(), "10.28.0.5:8080");
-    assert_eq!(sni, "app-alpha.edge.local");
+    assert_eq!(&*sni, "app-alpha.edge.local");
 
     let dereg_payload = json!({ "ip": "10.28.0.5", "port": 8080 });
     let dereg_req = Request::builder()
