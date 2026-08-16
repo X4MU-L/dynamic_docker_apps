@@ -1,6 +1,6 @@
 services:
   pingora-lb:
-    profiles: ["lb", "all", "default"]
+    profiles: [ "lb", "all", "default" ]
     build:
       context: .
       dockerfile: Dockerfile.pingora
@@ -8,6 +8,7 @@ services:
     hostname: pingora-lb.edge.local
     ports:
       - "80:80"
+      - "8081:8081"
     networks:
       edge-net:
         ipv4_address: 172.30.0.2
@@ -15,9 +16,30 @@ services:
       - PROXY_ADDR=0.0.0.0:80
       - API_ADDR=0.0.0.0:8081
       - HEALTH_CHECK_INTERVAL_SECS=5
+    healthcheck:
+      test: [ "CMD-SHELL", "python3 -c \"import urllib.request; resp=urllib.request.urlopen('http://localhost:8081/health'); exit(0 if resp.status==200 else 1)\"" ]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+      start_period: 1s
+
+  pingora-discover:
+    profiles: [ "lb", "discover", "all", "default" ]
+    build:
+      context: .
+      dockerfile: Dockerfile.discover
+    container_name: pingora-discover
+    restart: "no"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - edge-net
+    depends_on:
+      pingora-lb:
+        condition: service_healthy
 
   sample-app-1:
-    profiles: ["app", "all"]
+    profiles: [ "app", "all" ]
     build:
       context: ./sample_app
     container_name: sample-app-1
@@ -29,7 +51,7 @@ services:
         ipv4_address: 172.30.0.10
 
   sample-app-2:
-    profiles: ["app", "all"]
+    profiles: [ "app", "all" ]
     build:
       context: ./sample_app
     container_name: sample-app-2
@@ -41,17 +63,18 @@ services:
         ipv4_address: 172.30.0.11
 
   event-watcher:
-    profiles: ["watcher", "all"]
+    profiles: [ "watcher", "all" ]
     build:
       context: .
       dockerfile: Dockerfile.pingora
-    entrypoint: ["/app/bin/deployer", "--api-url", "http://pingora-lb:8081", "watch", "--network", "edge-net"]
+    entrypoint: [ "/app/bin/deployer", "--api-url", "http://pingora-lb:8081", "watch", "--network", "edge-net" ]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - edge-net
     depends_on:
-      - pingora-lb
+      pingora-lb:
+        condition: service_healthy
 
 networks:
   edge-net:
