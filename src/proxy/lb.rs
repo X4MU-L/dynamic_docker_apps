@@ -57,6 +57,13 @@ mod tests {
     use crate::domain::routing::register_upstream;
 
     #[test]
+    fn test_proxy_constructor() {
+        let state = DynamicLBState::new(Algorithm::RoundRobin);
+        let proxy = DynamicProxy::new(state.clone());
+        assert_eq!(proxy.state.algorithm, Algorithm::RoundRobin);
+    }
+
+    #[test]
     fn test_proxy_selects_peer_with_sni() {
         let state = DynamicLBState::new(Algorithm::RoundRobin);
         let item = BackendItem::new("127.0.0.1".to_string(), 9000, Some("backend-1".to_string()), None);
@@ -68,5 +75,12 @@ mod tests {
         let (backend, sni) = selected.unwrap();
         assert_eq!(backend.addr.to_string(), "127.0.0.1:9000");
         assert_eq!(sni, "backend-1");
+    }
+
+    #[test]
+    fn test_proxy_empty_pool_returns_none() {
+        let state = DynamicLBState::new(Algorithm::RoundRobin);
+        let proxy = DynamicProxy::new(state);
+        assert!(select_backend(&proxy.state, b"").is_none());
     }
 }
