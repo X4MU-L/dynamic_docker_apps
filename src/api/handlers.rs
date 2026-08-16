@@ -14,13 +14,18 @@ pub async fn register_upstream_handler(
     let item = BackendItem::new(
         payload.ip.clone(),
         payload.port,
-        payload.sni_name,
+        payload.sni_name.clone(),
         payload.health_endpoint,
     );
     register_upstream(&state, item)?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({"status": "registered", "ip": payload.ip, "port": payload.port})),
+        Json(json!({
+            "status": "registered",
+            "ip": payload.ip,
+            "port": payload.port,
+            "sni_name": payload.sni_name
+        })),
     ))
 }
 
@@ -59,7 +64,7 @@ mod tests {
         let payload = UpstreamRegistrationPayload {
             ip: "10.0.0.1".to_string(),
             port: 8080,
-            sni_name: Some("test-sni".to_string()),
+            sni_name: "test-sni.edge.local".to_string(),
             health_endpoint: Some("/health".to_string()),
         };
 
@@ -68,12 +73,13 @@ mod tests {
             .unwrap();
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(body.0["status"], "registered");
+        assert_eq!(body.0["sni_name"], "test-sni.edge.local");
 
         let selected = select_backend(&state, b"");
         assert!(selected.is_some());
         let (backend, sni) = selected.unwrap();
         assert_eq!(backend.addr.to_string(), "10.0.0.1:8080");
-        assert_eq!(sni, "test-sni");
+        assert_eq!(sni, "test-sni.edge.local");
     }
 
     #[tokio::test]
@@ -82,7 +88,7 @@ mod tests {
         let payload = UpstreamRegistrationPayload {
             ip: "not-an-ip".to_string(),
             port: 8080,
-            sni_name: None,
+            sni_name: "app.edge.local".to_string(),
             health_endpoint: None,
         };
 
@@ -98,7 +104,7 @@ mod tests {
         let payload = UpstreamRegistrationPayload {
             ip: "10.0.0.2".to_string(),
             port: 8080,
-            sni_name: None,
+            sni_name: "app-2.edge.local".to_string(),
             health_endpoint: None,
         };
 
@@ -122,7 +128,7 @@ mod tests {
         let reg_payload = UpstreamRegistrationPayload {
             ip: "10.0.0.3".to_string(),
             port: 8080,
-            sni_name: None,
+            sni_name: "app-3.edge.local".to_string(),
             health_endpoint: None,
         };
         let _ = register_upstream_handler(State(state.clone()), Json(reg_payload)).await;
@@ -165,7 +171,7 @@ mod tests {
         let reg_payload = UpstreamRegistrationPayload {
             ip: "10.0.0.4".to_string(),
             port: 8080,
-            sni_name: Some("sni-4".to_string()),
+            sni_name: "sni-4.edge.local".to_string(),
             health_endpoint: Some("/health".to_string()),
         };
         let _ = register_upstream_handler(State(state.clone()), Json(reg_payload)).await;
@@ -173,7 +179,7 @@ mod tests {
         let (status2, body2) = list_upstreams_handler(State(state)).await;
         assert_eq!(status2, StatusCode::OK);
         assert_eq!(body2.0[0]["ip"], "10.0.0.4");
-        assert_eq!(body2.0[0]["sni_name"], "sni-4");
+        assert_eq!(body2.0[0]["sni_name"], "sni-4.edge.local");
     }
 
     #[tokio::test]

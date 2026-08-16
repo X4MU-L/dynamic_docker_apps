@@ -23,17 +23,11 @@ pub struct BackendItem {
 }
 
 impl BackendItem {
-    pub fn new(
-        ip: String,
-        port: u16,
-        sni_name: Option<String>,
-        health_endpoint: Option<String>,
-    ) -> Self {
-        let sni = sni_name.unwrap_or_else(|| format!("{}:{}", ip, port));
+    pub fn new(ip: String, port: u16, sni_name: String, health_endpoint: Option<String>) -> Self {
         Self {
             ip,
             port,
-            sni_name: sni,
+            sni_name,
             health_endpoint: health_endpoint.unwrap_or_else(|| "/health".to_string()),
         }
     }
@@ -51,7 +45,7 @@ impl BackendItem {
 pub struct UpstreamRegistrationPayload {
     pub ip: String,
     pub port: u16,
-    pub sni_name: Option<String>,
+    pub sni_name: String,
     pub health_endpoint: Option<String>,
 }
 
@@ -62,6 +56,9 @@ impl UpstreamRegistrationPayload {
         }
         if self.port == 0 {
             return Err(DomainError::InvalidPort(self.port));
+        }
+        if self.sni_name.trim().is_empty() {
+            return Err(DomainError::InvalidSniName(self.sni_name.clone()));
         }
         if let Some(ref ep) = self.health_endpoint {
             if !ep.starts_with('/') {
@@ -149,23 +146,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_backend_item_defaults() {
-        let item = BackendItem::new("127.0.0.1".to_string(), 8080, None, None);
-        assert_eq!(item.address(), "127.0.0.1:8080");
-        assert_eq!(item.sni_name, "127.0.0.1:8080");
-        assert_eq!(item.health_endpoint, "/health");
-    }
-
-    #[test]
     fn test_backend_item_explicit() {
         let item = BackendItem::new(
             "10.0.0.5".to_string(),
             9000,
-            Some("custom-sni".to_string()),
+            "app-1.edge.local".to_string(),
             Some("/custom/health".to_string()),
         );
         assert_eq!(item.address(), "10.0.0.5:9000");
-        assert_eq!(item.sni_name, "custom-sni");
+        assert_eq!(item.sni_name, "app-1.edge.local");
         assert_eq!(item.health_endpoint, "/custom/health");
     }
 
@@ -174,23 +163,23 @@ mod tests {
         let payload = UpstreamRegistrationPayload {
             ip: "192.168.1.1".to_string(),
             port: 80,
-            sni_name: None,
+            sni_name: "app-1.edge.local".to_string(),
             health_endpoint: Some("/health".to_string()),
         };
         assert!(payload.validate().is_ok());
     }
 
     #[test]
-    fn test_payload_validation_invalid_health_endpoint() {
+    fn test_payload_validation_empty_sni() {
         let payload = UpstreamRegistrationPayload {
             ip: "192.168.1.1".to_string(),
             port: 80,
-            sni_name: None,
-            health_endpoint: Some("health".to_string()),
+            sni_name: "".to_string(),
+            health_endpoint: Some("/health".to_string()),
         };
         assert_eq!(
             payload.validate().unwrap_err(),
-            DomainError::InvalidHealthEndpoint("health".to_string())
+            DomainError::InvalidSniName("".to_string())
         );
     }
 }

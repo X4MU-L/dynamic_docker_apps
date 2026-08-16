@@ -14,7 +14,7 @@ async fn test_full_e2e_flow_registration_routing_deregistration() {
     let payload = json!({
         "ip": "10.28.0.5",
         "port": 8080,
-        "sni_name": "container-instance-alpha",
+        "sni_name": "app-alpha.edge.local",
         "health_endpoint": "/health"
     });
 
@@ -30,7 +30,7 @@ async fn test_full_e2e_flow_registration_routing_deregistration() {
 
     let (backend, sni) = select_backend(&state, b"").expect("Backend should be registered");
     assert_eq!(backend.addr.to_string(), "10.28.0.5:8080");
-    assert_eq!(sni, "container-instance-alpha");
+    assert_eq!(sni, "app-alpha.edge.local");
 
     let dereg_payload = json!({ "ip": "10.28.0.5", "port": 8080 });
     let dereg_req = Request::builder()
@@ -49,7 +49,11 @@ async fn test_e2e_error_responses_for_invalid_requests() {
     let state = DynamicLBState::new(Algorithm::RoundRobin);
     let app = create_router(state);
 
-    let invalid_payload = json!({ "ip": "not-an-ip", "port": 8080 });
+    let invalid_payload = json!({
+        "ip": "not-an-ip",
+        "port": 8080,
+        "sni_name": "app.edge.local"
+    });
     let req = Request::builder()
         .method("POST")
         .uri("/upstreams")

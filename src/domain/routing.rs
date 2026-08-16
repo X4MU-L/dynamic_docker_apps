@@ -94,20 +94,25 @@ mod tests {
         let item = BackendItem::new(
             "10.0.0.1".to_string(),
             8080,
-            Some("sni-1".to_string()),
+            "sni-1.edge.local".to_string(),
             None,
         );
         assert!(register_upstream(&state, item).is_ok());
 
         let (backend, sni) = select_backend(&state, b"").expect("Backend selected");
         assert_eq!(backend.addr.to_string(), "10.0.0.1:8080");
-        assert_eq!(sni, "sni-1");
+        assert_eq!(sni, "sni-1.edge.local");
     }
 
     #[test]
     fn test_register_duplicate_returns_error() {
         let state = DynamicLBState::new(Algorithm::RoundRobin);
-        let item = BackendItem::new("10.0.0.1".to_string(), 8080, None, None);
+        let item = BackendItem::new(
+            "10.0.0.1".to_string(),
+            8080,
+            "sni-1.edge.local".to_string(),
+            None,
+        );
         assert!(register_upstream(&state, item.clone()).is_ok());
         let err = register_upstream(&state, item).unwrap_err();
         assert_eq!(
@@ -119,8 +124,18 @@ mod tests {
     #[test]
     fn test_deregister_success_by_ip_and_port() {
         let state = DynamicLBState::new(Algorithm::RoundRobin);
-        let item1 = BackendItem::new("10.0.0.1".to_string(), 8080, None, None);
-        let item2 = BackendItem::new("10.0.0.1".to_string(), 9090, None, None);
+        let item1 = BackendItem::new(
+            "10.0.0.1".to_string(),
+            8080,
+            "app-1.edge.local".to_string(),
+            None,
+        );
+        let item2 = BackendItem::new(
+            "10.0.0.1".to_string(),
+            9090,
+            "app-2.edge.local".to_string(),
+            None,
+        );
         let _ = register_upstream(&state, item1);
         let _ = register_upstream(&state, item2);
 
@@ -133,7 +148,12 @@ mod tests {
     #[test]
     fn test_deregister_success_by_ip_only() {
         let state = DynamicLBState::new(Algorithm::RoundRobin);
-        let item = BackendItem::new("10.0.0.2".to_string(), 8080, None, None);
+        let item = BackendItem::new(
+            "10.0.0.2".to_string(),
+            8080,
+            "app-2.edge.local".to_string(),
+            None,
+        );
         let _ = register_upstream(&state, item);
         assert!(deregister_upstream(&state, "10.0.0.2", None).is_ok());
         assert!(state.items.load().is_empty());
@@ -154,17 +174,25 @@ mod tests {
         let items = vec![BackendItem::new(
             "10.0.0.1".to_string(),
             8080,
-            Some("custom-sni".to_string()),
+            "custom-sni.edge.local".to_string(),
             None,
         )];
-        assert_eq!(find_sni_name(&items, "10.0.0.1:8080"), "custom-sni");
+        assert_eq!(
+            find_sni_name(&items, "10.0.0.1:8080"),
+            "custom-sni.edge.local"
+        );
         assert_eq!(find_sni_name(&items, "10.0.0.99:8080"), "10.0.0.99:8080");
     }
 
     #[test]
     fn test_differential_check_peeping_no_rebuild() {
         let state = DynamicLBState::new(Algorithm::RoundRobin);
-        let items = vec![BackendItem::new("10.0.0.1".to_string(), 8080, None, None)];
+        let items = vec![BackendItem::new(
+            "10.0.0.1".to_string(),
+            8080,
+            "app.edge.local".to_string(),
+            None,
+        )];
         let _ = register_upstream(&state, items[0].clone());
 
         let lb_before = Arc::clone(&*state.lb.load());
