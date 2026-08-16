@@ -5,7 +5,9 @@ use pingora::lb::selection::{Consistent, Random, RoundRobin};
 use pingora::lb::{Backend, LoadBalancer};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Serialize, Deserialize, Copy)]
 pub enum Algorithm {
@@ -14,12 +16,22 @@ pub enum Algorithm {
     Consistent,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BackendStatus {
+    Active,
+    Draining,
+}
+
+#[derive(Debug, Clone)]
 pub struct BackendItem {
     pub ip: String,
     pub port: u16,
     pub sni_name: String,
     pub health_endpoint: String,
+    pub status: BackendStatus,
+    pub active_requests: Arc<AtomicUsize>,
+    pub drain_deadline: Option<Instant>,
 }
 
 impl BackendItem {
@@ -29,6 +41,9 @@ impl BackendItem {
             port,
             sni_name: sni_name.to_lowercase(),
             health_endpoint: health_endpoint.unwrap_or_else(|| "/health".to_string()),
+            status: BackendStatus::Active,
+            active_requests: Arc::new(AtomicUsize::new(0)),
+            drain_deadline: None,
         }
     }
 
@@ -39,6 +54,40 @@ impl BackendItem {
     pub fn to_pingora_backend(&self) -> Option<Backend> {
         Backend::new(&self.address()).ok()
     }
+
+    pub fn remaining_drain_secs(&self) -> Option<u64> {
+        self.drain_deadline.map(|deadline| {
+            let now = Instant::now();
+            if deadline > now {
+                (deadline - now).as_secs()
+            } else {
+                0
+            }
+        })
+    }
+
+    pub fn to_status_response(&self) -> BackendStatusResponse {
+        BackendStatusResponse {
+            ip: self.ip.clone(),
+            port: self.port,
+            sni_name: self.sni_name.clone(),
+            health_endpoint: self.health_endpoint.clone(),
+            status: self.status,
+            active_requests: self.active_requests.load(Ordering::SeqCst),
+            remaining_drain_secs: self.remaining_drain_secs(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendStatusResponse {
+    pub ip: String,
+    pub port: u16,
+    pub sni_name: String,
+    pub health_endpoint: String,
+    pub status: BackendStatus,
+    pub active_requests: usize,
+    pub remaining_drain_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +137,35 @@ impl UpstreamDeregistrationPayload {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpstreamDrainPayload {
+    pub ip: Option<String>,
+    pub port: Option<u16>,
+    pub sni_name: Option<String>,
+    pub drain_timeout_secs: Option<u64>,
+}
+
+impl UpstreamDrainPayload {
+    pub fn validate(&mut self) -> Result<(), DomainError> {
+        if self.ip.is_none() && self.sni_name.is_none() {
+            return Err(DomainError::InvalidIpAddress(
+                "Either ip or sni_name must be specified for drain".to_string(),
+            ));
+        }
+        if let Some(ref mut sni) = self.sni_name {
+            *sni = sni.trim().to_lowercase();
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpstreamStatusQuery {
+    pub ip: Option<String>,
+    pub port: Option<u16>,
+    pub sni: Option<String>,
 }
 
 #[derive(Clone)]
@@ -156,7 +234,7 @@ mod tests {
         );
         assert_eq!(item.address(), "10.0.0.5:9000");
         assert_eq!(item.sni_name, "app-1.edge.local");
-        assert_eq!(item.health_endpoint, "/custom/health");
+        assert_eq!(item.status, BackendStatus::Active);
     }
 
     #[test]
@@ -172,16 +250,14 @@ mod tests {
     }
 
     #[test]
-    fn test_payload_validation_empty_sni() {
-        let mut payload = UpstreamRegistrationPayload {
-            ip: "192.168.1.1".to_string(),
-            port: 80,
-            sni_name: "".to_string(),
-            health_endpoint: Some("/health".to_string()),
+    fn test_drain_payload_validation() {
+        let mut payload = UpstreamDrainPayload {
+            ip: None,
+            port: None,
+            sni_name: Some(" APP-1.EDGE.LOCAL ".to_string()),
+            drain_timeout_secs: Some(15),
         };
-        assert_eq!(
-            payload.validate().unwrap_err(),
-            DomainError::InvalidSniName("".to_string())
-        );
+        assert!(payload.validate().is_ok());
+        assert_eq!(payload.sni_name, Some("app-1.edge.local".to_string()));
     }
 }

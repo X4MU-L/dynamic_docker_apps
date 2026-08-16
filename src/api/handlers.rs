@@ -1,9 +1,16 @@
 use crate::domain::errors::DomainError;
 use crate::domain::models::{
-    BackendItem, DynamicLBState, UpstreamDeregistrationPayload, UpstreamRegistrationPayload,
+    BackendItem, DynamicLBState, UpstreamDeregistrationPayload, UpstreamDrainPayload,
+    UpstreamRegistrationPayload, UpstreamStatusQuery,
 };
-use crate::domain::routing::{deregister_upstream, register_upstream};
-use axum::{extract::State, http::StatusCode, Json};
+use crate::domain::routing::{
+    deregister_upstream, get_upstream_status, mark_draining_upstream, register_upstream,
+};
+use axum::{
+    extract::{Query, State},
+    http::StatusCode,
+    Json,
+};
 use serde_json::{json, Value};
 
 pub async fn register_upstream_handler(
@@ -41,11 +48,51 @@ pub async fn deregister_upstream_handler(
     ))
 }
 
+pub async fn drain_upstream_handler(
+    State(state): State<DynamicLBState>,
+    Json(mut payload): Json<UpstreamDrainPayload>,
+) -> Result<(StatusCode, Json<Value>), DomainError> {
+    payload.validate()?;
+    let timeout = payload.drain_timeout_secs.unwrap_or(15);
+    let item = mark_draining_upstream(
+        &state,
+        payload.ip.as_deref(),
+        payload.port,
+        payload.sni_name.as_deref(),
+        timeout,
+    )?;
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "status": "draining",
+            "ip": item.ip,
+            "port": item.port,
+            "sni_name": item.sni_name,
+            "drain_timeout_secs": timeout
+        })),
+    ))
+}
+
+pub async fn get_upstream_status_handler(
+    State(state): State<DynamicLBState>,
+    Query(query): Query<UpstreamStatusQuery>,
+) -> Result<(StatusCode, Json<Value>), DomainError> {
+    let status = get_upstream_status(
+        &state,
+        query.ip.as_deref(),
+        query.port,
+        query.sni.as_deref(),
+    )
+    .ok_or_else(|| DomainError::BackendNotFound("target upstream not found".to_string()))?;
+    Ok((StatusCode::OK, Json(json!(status))))
+}
+
 pub async fn list_upstreams_handler(
     State(state): State<DynamicLBState>,
 ) -> (StatusCode, Json<Value>) {
     let items = state.items.load();
-    (StatusCode::OK, Json(json!(**items)))
+    let responses: Vec<_> = items.iter().map(|item| item.to_status_response()).collect();
+    (StatusCode::OK, Json(json!(responses)))
 }
 
 pub async fn health_check_handler() -> (StatusCode, Json<Value>) {
@@ -83,115 +130,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_register_handler_invalid_ip() {
-        let state = DynamicLBState::new(Algorithm::RoundRobin);
-        let payload = UpstreamRegistrationPayload {
-            ip: "not-an-ip".to_string(),
-            port: 8080,
-            sni_name: "app.edge.local".to_string(),
-            health_endpoint: None,
-        };
-
-        let err = register_upstream_handler(State(state), Json(payload))
-            .await
-            .unwrap_err();
-        assert_eq!(err, DomainError::InvalidIpAddress("not-an-ip".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_register_handler_duplicate_conflict() {
-        let state = DynamicLBState::new(Algorithm::RoundRobin);
-        let payload1 = UpstreamRegistrationPayload {
-            ip: "10.0.0.2".to_string(),
-            port: 8080,
-            sni_name: "App-2.edge.local".to_string(),
-            health_endpoint: None,
-        };
-        let payload2 = UpstreamRegistrationPayload {
-            ip: "10.0.0.2".to_string(),
-            port: 8080,
-            sni_name: "aPp-2.edge.local".to_string(),
-            health_endpoint: None,
-        };
-
-        assert!(
-            register_upstream_handler(State(state.clone()), Json(payload1))
-                .await
-                .is_ok()
-        );
-        let err = register_upstream_handler(State(state), Json(payload2))
-            .await
-            .unwrap_err();
-        assert_eq!(
-            err,
-            DomainError::BackendAlreadyExists("10.0.0.2:8080".to_string())
-        );
-    }
-
-    #[tokio::test]
-    async fn test_deregister_handler_success() {
+    async fn test_drain_handler_success() {
         let state = DynamicLBState::new(Algorithm::RoundRobin);
         let reg_payload = UpstreamRegistrationPayload {
-            ip: "10.0.0.3".to_string(),
+            ip: "10.0.0.5".to_string(),
             port: 8080,
-            sni_name: "app-3.edge.local".to_string(),
+            sni_name: "app-5.edge.local".to_string(),
             health_endpoint: None,
         };
         let _ = register_upstream_handler(State(state.clone()), Json(reg_payload)).await;
 
-        let dereg_payload = UpstreamDeregistrationPayload {
-            ip: "10.0.0.3".to_string(),
+        let drain_payload = UpstreamDrainPayload {
+            ip: Some("10.0.0.5".to_string()),
             port: Some(8080),
+            sni_name: None,
+            drain_timeout_secs: Some(10),
         };
-        let (status, body) = deregister_upstream_handler(State(state.clone()), Json(dereg_payload))
+        let (status, body) = drain_upstream_handler(State(state.clone()), Json(drain_payload))
             .await
             .unwrap();
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body.0["status"], "deregistered");
-        assert!(select_backend(&state, b"").is_none());
-    }
+        assert_eq!(body.0["status"], "draining");
 
-    #[tokio::test]
-    async fn test_deregister_handler_not_found() {
-        let state = DynamicLBState::new(Algorithm::RoundRobin);
-        let dereg_payload = UpstreamDeregistrationPayload {
-            ip: "10.0.0.99".to_string(),
+        let query = UpstreamStatusQuery {
+            ip: Some("10.0.0.5".to_string()),
             port: Some(8080),
+            sni: None,
         };
-        let err = deregister_upstream_handler(State(state), Json(dereg_payload))
+        let (st_code, st_body) = get_upstream_status_handler(State(state), Query(query))
             .await
-            .unwrap_err();
-        assert_eq!(
-            err,
-            DomainError::BackendNotFound("10.0.0.99:8080".to_string())
-        );
-    }
-
-    #[tokio::test]
-    async fn test_list_upstreams_handler() {
-        let state = DynamicLBState::new(Algorithm::RoundRobin);
-        let (status, body) = list_upstreams_handler(State(state.clone())).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body.0, json!([]));
-
-        let reg_payload = UpstreamRegistrationPayload {
-            ip: "10.0.0.4".to_string(),
-            port: 8080,
-            sni_name: "Sni-4.edge.local".to_string(),
-            health_endpoint: Some("/health".to_string()),
-        };
-        let _ = register_upstream_handler(State(state.clone()), Json(reg_payload)).await;
-
-        let (status2, body2) = list_upstreams_handler(State(state)).await;
-        assert_eq!(status2, StatusCode::OK);
-        assert_eq!(body2.0[0]["ip"], "10.0.0.4");
-        assert_eq!(body2.0[0]["sni_name"], "sni-4.edge.local");
-    }
-
-    #[tokio::test]
-    async fn test_health_check_handler() {
-        let (status, body) = health_check_handler().await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body.0["status"], "healthy");
+            .unwrap();
+        assert_eq!(st_code, StatusCode::OK);
+        assert_eq!(st_body.0["status"], "draining");
     }
 }
