@@ -12,6 +12,11 @@ func ParseDeployFlags(args []string, defaultAPI string) (domain.DeploymentConfig
 	fs := flag.NewFlagSet("deploy", flag.ContinueOnError)
 	contextPath := fs.String("context", "", "Path to Docker context build directory")
 	fs.StringVar(contextPath, "c", "", "Path to Docker context build directory (shorthand)")
+	image := fs.String("image", "", "Pre-built Docker image tag (e.g. nginx:latest)")
+	fs.StringVar(image, "i", "", "Pre-built Docker image tag (shorthand)")
+	username := fs.String("username", "", "Registry authentication username")
+	fs.StringVar(username, "u", "", "Registry username (shorthand)")
+	password := fs.String("password", "", "Registry authentication password")
 	name := fs.String("name", "", "Container instance name")
 	fs.StringVar(name, "n", "", "Container instance name (shorthand)")
 	domainSuffix := fs.String("domain", domain.DefaultDomainSuffix, "Domain suffix for hostname/SNI")
@@ -29,12 +34,15 @@ func ParseDeployFlags(args []string, defaultAPI string) (domain.DeploymentConfig
 	nameLower := strings.ToLower(strings.TrimSpace(*name))
 	domainLower := strings.ToLower(strings.TrimSpace(*domainSuffix))
 
-	if err := validateDeployArgs(*contextPath, nameLower, domainLower); err != nil {
+	if err := validateDeployArgs(*contextPath, *image, nameLower, domainLower); err != nil {
 		return domain.DeploymentConfig{}, "", err
 	}
 
 	cfg := domain.DeploymentConfig{
 		ContextPath:    *contextPath,
+		Image:          *image,
+		Username:       *username,
+		Password:       *password,
 		Name:           nameLower,
 		Network:        *network,
 		DomainSuffix:   domainLower,
@@ -45,9 +53,9 @@ func ParseDeployFlags(args []string, defaultAPI string) (domain.DeploymentConfig
 	return cfg, *apiURL, nil
 }
 
-func validateDeployArgs(contextPath, name, domainSuffix string) error {
-	if contextPath == "" {
-		return fmt.Errorf("flag --context / -c is required for deploy command")
+func validateDeployArgs(contextPath, image, name, domainSuffix string) error {
+	if contextPath == "" && image == "" {
+		return fmt.Errorf("either --image (-i) or --context (-c) must be specified for deploy command")
 	}
 	if name != "" && !isValidUrlSafeName(name) {
 		return fmt.Errorf("container name '%s' is not URL-safe (must contain letters, numbers, and hyphens)", name)

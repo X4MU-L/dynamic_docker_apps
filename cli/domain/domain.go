@@ -9,7 +9,12 @@ import (
 const DefaultDomainSuffix = "edge.local"
 
 type DeploymentConfig struct {
-	ContextPath    string
+	ContextPath string
+	// image name if image is used
+	Image string
+	// allow for password and username for private images
+	Username       string
+	Password       string
 	Name           string
 	Network        string
 	DomainSuffix   string

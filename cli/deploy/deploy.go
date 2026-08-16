@@ -30,9 +30,9 @@ func ExecuteDeployment(config domain.DeploymentConfig, apiURL string) (string, e
 		domainSuffix = domain.DefaultDomainSuffix
 	}
 	hostname := fmt.Sprintf("%s.%s", containerName, domainSuffix)
-	imageTag := fmt.Sprintf("%s:latest", containerName)
 
-	if err := docker_utils.BuildImage(config.ContextPath, imageTag); err != nil {
+	imageTag, err := prepareImage(config, containerName)
+	if err != nil {
 		return "", err
 	}
 
@@ -41,6 +41,21 @@ func ExecuteDeployment(config domain.DeploymentConfig, apiURL string) (string, e
 	}
 
 	return registerAndCompleteDeployment(config, apiURL, containerName)
+}
+
+func prepareImage(config domain.DeploymentConfig, containerName string) (string, error) {
+	if config.Image != "" {
+		if err := docker_utils.EnsureImageAvailable(config.Image, config.Username, config.Password); err != nil {
+			return "", err
+		}
+		return config.Image, nil
+	}
+
+	imageTag := fmt.Sprintf("%s:latest", containerName)
+	if err := docker_utils.BuildImage(config.ContextPath, imageTag); err != nil {
+		return "", err
+	}
+	return imageTag, nil
 }
 
 func registerAndCompleteDeployment(config domain.DeploymentConfig, apiURL, containerName string) (string, error) {

@@ -15,6 +15,65 @@ func ContainerExists(containerName string) bool {
 	return cmd.Run() == nil
 }
 
+func LocalImageExists(imageTag string) bool {
+	cmd := exec.Command("docker", "image", "inspect", imageTag)
+	return cmd.Run() == nil
+}
+
+func EnsureImageAvailable(imageTag, username, password string) error {
+	if LocalImageExists(imageTag) {
+		logger.Info("Image '%s' found locally on host daemon.", imageTag)
+		return nil
+	}
+
+	logger.Info("Image '%s' not found locally. Preparing to pull...", imageTag)
+	if username != "" && password != "" {
+		if err := LoginToRegistry(username, password, imageTag); err != nil {
+			return err
+		}
+	}
+	return PullImage(imageTag)
+}
+
+func LoginToRegistry(username, password, imageTag string) error {
+	registry := extractRegistryHost(imageTag)
+	step := logger.StartStep("Authenticating to registry '%s' as user '%s'...", registry, username)
+
+	args := []string{"login", "-u", username, "--password-stdin"}
+	if registry != "" {
+		args = append(args, registry)
+	}
+	cmd := exec.Command("docker", args...)
+	cmd.Stdin = strings.NewReader(password)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		step.FinishError("Registry login failed for %s", username)
+		return fmt.Errorf("docker login failed: %s (%v)", string(out), err)
+	}
+	step.FinishSuccess("Authenticated to registry '%s'.", username)
+	return nil
+}
+
+func extractRegistryHost(imageTag string) string {
+	parts := strings.Split(imageTag, "/")
+	if len(parts) > 1 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
+		return parts[0]
+	}
+	return ""
+}
+
+func PullImage(imageTag string) error {
+	step := logger.StartStep("Pulling Docker image '%s'...", imageTag)
+	cmd := exec.Command("docker", "pull", imageTag)
+	if err := runBufferedStepCmd(cmd, step); err != nil {
+		step.FinishError("Failed to pull image '%s'", imageTag)
+		return err
+	}
+	step.FinishSuccess("Docker image '%s' pulled successfully.", imageTag)
+	return nil
+}
+
 func EnsureNetworkExists(networkName string) error {
 	inspectCmd := exec.Command("docker", "network", "inspect", networkName)
 	if err := inspectCmd.Run(); err == nil {
