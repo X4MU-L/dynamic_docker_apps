@@ -1,28 +1,52 @@
 package api_utils
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"os/exec"
 	"strings"
-	"time"
 
 	"dynamic_docker_apps/cli/domain"
 )
 
-var client = &http.Client{Timeout: 5 * time.Second}
+type CommandRunner interface {
+	RunCommand(name string, args ...string) ([]byte, error)
+}
+
+type RealCommandRunner struct{}
+
+func (r RealCommandRunner) RunCommand(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+var runner CommandRunner = RealCommandRunner{}
+
+func SetCommandRunner(r CommandRunner) {
+	runner = r
+}
 
 func CheckApiServerHealth(apiURL string) error {
 	endpoint := fmt.Sprintf("%s/health", strings.TrimRight(apiURL, "/"))
-	resp, err := client.Get(endpoint)
-	if err != nil {
-		return fmt.Errorf("Pingora Control API server is unreachable at %s (%v)", apiURL, err)
+	if err := checkHealthViaDockerExec(endpoint); err != nil {
+		return err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Pingora Control API health check returned status %s", resp.Status)
+	return nil
+}
+
+func checkHealthViaDockerExec(endpoint string) error {
+	pyScript := fmt.Sprintf(`import urllib.request, sys
+try:
+    resp = urllib.request.urlopen('%s')
+    sys.exit(0 if resp.status == 200 else 1)
+except Exception as e:
+    sys.stderr.write(str(e))
+    sys.exit(1)`, endpoint)
+
+	pyCmd := strings.ReplaceAll(pyScript, "\n", "; ")
+	out, err := runner.RunCommand("docker", "exec", "pingora-lb", "python3", "-c", pyCmd)
+	if err != nil {
+		return parseDockerError(string(out), err)
 	}
 	return nil
 }
@@ -31,45 +55,60 @@ func sendApiRequest(apiURL, method, path string, payload interface{}) ([]byte, e
 	if err := CheckApiServerHealth(apiURL); err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s%s", strings.TrimRight(apiURL, "/"), path)
-	req, err := createHttpRequest(method, url, payload)
-	if err != nil {
-		return nil, err
+	formattedPath := path
+	if !strings.HasPrefix(formattedPath, "/") {
+		formattedPath = "/" + formattedPath
 	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP %s failed for %s: %w", method, url, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, parseApiError(resp.StatusCode, respBody)
-	}
-	return respBody, nil
+	url := fmt.Sprintf("%s%s", strings.TrimRight(apiURL, "/"), formattedPath)
+	return sendApiRequestViaDockerExec(url, method, payload)
 }
 
-func createHttpRequest(method, url string, payload interface{}) (*http.Request, error) {
-	var bodyReader io.Reader
-	if payload != nil {
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return nil, err
-		}
-		bodyReader = bytes.NewBuffer(data)
-	}
-	req, err := http.NewRequest(method, url, bodyReader)
+func sendApiRequestViaDockerExec(url, method string, payload interface{}) ([]byte, error) {
+	jsonBytes, _ := json.Marshal(payload)
+	payloadStr := strings.ReplaceAll(string(jsonBytes), "\"", "\\\"")
+
+	pyScript := fmt.Sprintf(`import urllib.request, urllib.error, sys
+try:
+    data = """%s""".encode() if """%s""" != "null" else None
+    req = urllib.request.Request('%s', data=data, headers={'Content-Type':'application/json'}, method='%s')
+    with urllib.request.urlopen(req) as resp:
+        print(resp.read().decode())
+except urllib.error.HTTPError as e:
+    sys.stderr.write(f"HTTP_ERROR:{e.code}:"+e.read().decode())
+    sys.exit(1)
+except Exception as e:
+    sys.stderr.write(f"URL_ERROR:{str(e)}")
+    sys.exit(1)`, payloadStr, payloadStr, url, method)
+
+	pyCmd := strings.ReplaceAll(pyScript, "\n", "; ")
+	out, err := runner.RunCommand("docker", "exec", "pingora-lb", "python3", "-c", pyCmd)
 	if err != nil {
-		return nil, err
+		return nil, parseExecOutputError(string(out))
 	}
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
+	return out, nil
+}
+
+func parseDockerError(out string, err error) error {
+	if strings.Contains(out, "No such container") || strings.Contains(out, "is not running") {
+		return fmt.Errorf("Pingora LB container 'pingora-lb' is not running in Docker")
 	}
-	return req, nil
+	return fmt.Errorf("Pingora Control API unreachable inside container: %s (%v)", strings.TrimSpace(out), err)
+}
+
+func parseExecOutputError(out string) error {
+	outStr := strings.TrimSpace(out)
+	if strings.HasPrefix(outStr, "HTTP_ERROR:") {
+		parts := strings.SplitN(outStr, ":", 3)
+		if len(parts) == 3 {
+			code := 0
+			_, _ = fmt.Sscanf(parts[1], "%d", &code)
+			return parseApiError(code, []byte(parts[2]))
+		}
+	}
+	if strings.Contains(outStr, "No such container") || strings.Contains(outStr, "is not running") {
+		return fmt.Errorf("Pingora LB container 'pingora-lb' is not running in Docker")
+	}
+	return fmt.Errorf("API call failed: %s", outStr)
 }
 
 func parseApiError(statusCode int, body []byte) error {
@@ -80,8 +119,8 @@ func parseApiError(statusCode int, body []byte) error {
 	return fmt.Errorf("API error (%d): %s", statusCode, string(body))
 }
 
-func RegisterUpstream(apiURL string, payload domain.UpstreamTarget) error {
-	_, err := sendApiRequest(apiURL, http.MethodPost, "/upstreams", payload)
+func RegisterUpstream(apiURL string, target domain.UpstreamTarget) error {
+	_, err := sendApiRequest(apiURL, http.MethodPost, "/upstreams", target)
 	return err
 }
 
