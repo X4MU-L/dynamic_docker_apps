@@ -63,11 +63,13 @@ services:
         ipv4_address: 172.30.0.11
 
   event-watcher:
-    profiles: [ "watcher" ]
+    profiles: [ "watcher", "all" ]
     build:
       context: .
-      dockerfile: Dockerfile.pingora
-    entrypoint: [ "/app/bin/deployer", "--api-url", "http://pingora-lb:8081", "watch", "--network", "edge-net" ]
+      dockerfile: Dockerfile.discover
+    container_name: event-watcher
+    restart: "no"
+    entrypoint: [ "/app/discover_cli", "--api-url", "http://pingora-lb:8081", "watch", "--network", "edge-net" ]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
