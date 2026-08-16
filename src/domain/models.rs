@@ -27,7 +27,7 @@ impl BackendItem {
         Self {
             ip,
             port,
-            sni_name,
+            sni_name: sni_name.to_lowercase(),
             health_endpoint: health_endpoint.unwrap_or_else(|| "/health".to_string()),
         }
     }
@@ -50,14 +50,15 @@ pub struct UpstreamRegistrationPayload {
 }
 
 impl UpstreamRegistrationPayload {
-    pub fn validate(&self) -> Result<(), DomainError> {
+    pub fn validate(&mut self) -> Result<(), DomainError> {
         if self.ip.parse::<IpAddr>().is_err() {
             return Err(DomainError::InvalidIpAddress(self.ip.clone()));
         }
         if self.port == 0 {
             return Err(DomainError::InvalidPort(self.port));
         }
-        if self.sni_name.trim().is_empty() {
+        self.sni_name = self.sni_name.trim().to_lowercase();
+        if self.sni_name.is_empty() {
             return Err(DomainError::InvalidSniName(self.sni_name.clone()));
         }
         if let Some(ref ep) = self.health_endpoint {
@@ -146,11 +147,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_backend_item_explicit() {
+    fn test_backend_item_lowercases_sni() {
         let item = BackendItem::new(
             "10.0.0.5".to_string(),
             9000,
-            "app-1.edge.local".to_string(),
+            "APP-1.EDGE.LOCAL".to_string(),
             Some("/custom/health".to_string()),
         );
         assert_eq!(item.address(), "10.0.0.5:9000");
@@ -159,19 +160,20 @@ mod tests {
     }
 
     #[test]
-    fn test_payload_validation_success() {
-        let payload = UpstreamRegistrationPayload {
+    fn test_payload_validation_lowercases_sni() {
+        let mut payload = UpstreamRegistrationPayload {
             ip: "192.168.1.1".to_string(),
             port: 80,
-            sni_name: "app-1.edge.local".to_string(),
+            sni_name: "App-1.Edge.Local".to_string(),
             health_endpoint: Some("/health".to_string()),
         };
         assert!(payload.validate().is_ok());
+        assert_eq!(payload.sni_name, "app-1.edge.local");
     }
 
     #[test]
     fn test_payload_validation_empty_sni() {
-        let payload = UpstreamRegistrationPayload {
+        let mut payload = UpstreamRegistrationPayload {
             ip: "192.168.1.1".to_string(),
             port: 80,
             sni_name: "".to_string(),

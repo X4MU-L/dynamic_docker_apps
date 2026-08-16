@@ -52,7 +52,7 @@ fn test_deregister_non_existent_returns_not_found_error() {
 
 #[test]
 fn test_payload_validation_errors() {
-    let invalid_ip = UpstreamRegistrationPayload {
+    let mut invalid_ip = UpstreamRegistrationPayload {
         ip: "invalid-ip-addr".to_string(),
         port: 8080,
         sni_name: "app.edge.local".to_string(),
@@ -63,7 +63,7 @@ fn test_payload_validation_errors() {
         DomainError::InvalidIpAddress("invalid-ip-addr".to_string())
     );
 
-    let invalid_port = UpstreamRegistrationPayload {
+    let mut invalid_port = UpstreamRegistrationPayload {
         ip: "127.0.0.1".to_string(),
         port: 0,
         sni_name: "app.edge.local".to_string(),

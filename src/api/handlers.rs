@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 pub async fn register_upstream_handler(
     State(state): State<DynamicLBState>,
-    Json(payload): Json<UpstreamRegistrationPayload>,
+    Json(mut payload): Json<UpstreamRegistrationPayload>,
 ) -> Result<(StatusCode, Json<Value>), DomainError> {
     payload.validate()?;
     let item = BackendItem::new(
@@ -64,7 +64,7 @@ mod tests {
         let payload = UpstreamRegistrationPayload {
             ip: "10.0.0.1".to_string(),
             port: 8080,
-            sni_name: "test-sni.edge.local".to_string(),
+            sni_name: "Test-SNI.edge.local".to_string(),
             health_endpoint: Some("/health".to_string()),
         };
 
@@ -101,19 +101,25 @@ mod tests {
     #[tokio::test]
     async fn test_register_handler_duplicate_conflict() {
         let state = DynamicLBState::new(Algorithm::RoundRobin);
-        let payload = UpstreamRegistrationPayload {
+        let payload1 = UpstreamRegistrationPayload {
             ip: "10.0.0.2".to_string(),
             port: 8080,
-            sni_name: "app-2.edge.local".to_string(),
+            sni_name: "App-2.edge.local".to_string(),
+            health_endpoint: None,
+        };
+        let payload2 = UpstreamRegistrationPayload {
+            ip: "10.0.0.2".to_string(),
+            port: 8080,
+            sni_name: "aPp-2.edge.local".to_string(),
             health_endpoint: None,
         };
 
         assert!(
-            register_upstream_handler(State(state.clone()), Json(payload.clone()))
+            register_upstream_handler(State(state.clone()), Json(payload1))
                 .await
                 .is_ok()
         );
-        let err = register_upstream_handler(State(state), Json(payload))
+        let err = register_upstream_handler(State(state), Json(payload2))
             .await
             .unwrap_err();
         assert_eq!(
@@ -171,7 +177,7 @@ mod tests {
         let reg_payload = UpstreamRegistrationPayload {
             ip: "10.0.0.4".to_string(),
             port: 8080,
-            sni_name: "sni-4.edge.local".to_string(),
+            sni_name: "Sni-4.edge.local".to_string(),
             health_endpoint: Some("/health".to_string()),
         };
         let _ = register_upstream_handler(State(state.clone()), Json(reg_payload)).await;
