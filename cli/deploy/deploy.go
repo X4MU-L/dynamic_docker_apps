@@ -20,13 +20,22 @@ func ExecuteDeployment(config domain.DeploymentConfig, apiURL string) (string, e
 	if containerName == "" {
 		containerName = domain.GenerateContainerName("app")
 	}
+	if docker_utils.ContainerExists(containerName) {
+		return "", fmt.Errorf("container '%s' is already running in Docker", containerName)
+	}
+
+	domainSuffix := config.DomainSuffix
+	if domainSuffix == "" {
+		domainSuffix = domain.DefaultDomainSuffix
+	}
+	hostname := fmt.Sprintf("%s.%s", containerName, domainSuffix)
 	imageTag := fmt.Sprintf("%s:latest", containerName)
 
 	if err := docker_utils.BuildImage(config.ContextPath, imageTag); err != nil {
 		return "", err
 	}
 
-	if err := docker_utils.RunContainer(imageTag, containerName, config.Network); err != nil {
+	if err := docker_utils.RunContainer(imageTag, containerName, hostname, config.Network); err != nil {
 		return "", err
 	}
 
@@ -49,15 +58,15 @@ func registerAndCompleteDeployment(config domain.DeploymentConfig, apiURL, conta
 	}
 	stepHealth.FinishSuccess("Container %s is healthy.", containerName)
 
-	target := domain.NewUpstreamTarget(ipAddress, config.Port, containerName, config.HealthEndpoint)
-	stepReg := logger.StartStep("Registering %s (%s:%d) with Pingora LB...", containerName, ipAddress, config.Port)
+	target := domain.NewUpstreamTarget(ipAddress, config.Port, containerName, config.DomainSuffix, config.HealthEndpoint)
+	stepReg := logger.StartStep("Registering %s (Hostname: %s) with Pingora LB...", containerName, target.SNIName)
 	if err := api_utils.RegisterUpstream(apiURL, target); err != nil {
 		stepReg.FinishError("Pingora LB registration failed for %s", containerName)
 		docker_utils.StopAndRemoveContainer(containerName)
 		return "", err
 	}
-	stepReg.FinishSuccess("Registered '%s' (%s:%d) with Pingora LB.", containerName, ipAddress, config.Port)
+	stepReg.FinishSuccess("Registered '%s' (Hostname: %s) with Pingora LB.", containerName, target.SNIName)
 
-	logger.Success("Deployment complete: '%s' is active and routing.", containerName)
+	logger.Success("Deployment complete: '%s' (Hostname: %s) is active and routing.", containerName, target.SNIName)
 	return containerName, nil
 }

@@ -10,6 +10,11 @@ import (
 	"dynamic_docker_apps/cli/logger"
 )
 
+func ContainerExists(containerName string) bool {
+	cmd := exec.Command("docker", "inspect", containerName)
+	return cmd.Run() == nil
+}
+
 func EnsureNetworkExists(networkName string) error {
 	inspectCmd := exec.Command("docker", "network", "inspect", networkName)
 	if err := inspectCmd.Run(); err == nil {
@@ -43,19 +48,19 @@ func BuildImage(contextPath, tag string) error {
 	return nil
 }
 
-func RunContainer(tag, containerName, networkName string) error {
+func RunContainer(tag, containerName, hostname, networkName string) error {
 	if err := EnsureNetworkExists(networkName); err != nil {
 		return err
 	}
 
-	step := logger.StartStep("Running container '%s' on network '%s'...", containerName, networkName)
-	args := []string{"run", "-d", "--name", containerName, "--network", networkName, tag}
+	step := logger.StartStep("Running container '%s' (hostname: %s) on network '%s'...", containerName, hostname, networkName)
+	args := []string{"run", "-d", "--name", containerName, "--hostname", hostname, "--network", networkName, tag}
 	cmd := exec.Command("docker", args...)
 	if err := runBufferedStepCmd(cmd, step); err != nil {
 		step.FinishError("Docker run failed for %s", containerName)
 		return err
 	}
-	step.FinishSuccess("Container '%s' started on network '%s'.", containerName, networkName)
+	step.FinishSuccess("Container '%s' started on network '%s' with hostname '%s'.", containerName, networkName, hostname)
 	return nil
 }
 

@@ -57,7 +57,7 @@ func TestRegisterUpstreamSuccess(t *testing.T) {
 	SetCommandRunner(mock)
 	defer SetCommandRunner(RealCommandRunner{})
 
-	target := domain.NewUpstreamTarget("127.0.0.1", 8080, "test", "/health")
+	target := domain.NewUpstreamTarget("127.0.0.1", 8080, "test-app", "edge.local", "/health")
 	if err := RegisterUpstream("http://pingora-lb:8081", target); err != nil {
 		t.Errorf("Expected register success, got: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestRegisterUpstreamConflictError(t *testing.T) {
 	SetCommandRunner(mock)
 	defer SetCommandRunner(RealCommandRunner{})
 
-	target := domain.NewUpstreamTarget("127.0.0.1", 8080, "test", "/health")
+	target := domain.NewUpstreamTarget("127.0.0.1", 8080, "test-app", "edge.local", "/health")
 	err := RegisterUpstream("http://pingora-lb:8081", target)
 	if err == nil {
 		t.Fatal("Expected error on duplicate registration, got nil")

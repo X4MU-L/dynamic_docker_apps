@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
+const DefaultDomainSuffix = "edge.local"
+
 type DeploymentConfig struct {
 	ContextPath    string
 	Name           string
 	Network        string
+	DomainSuffix   string
 	Port           int
 	HealthEndpoint string
 	TimeoutSecs    int
@@ -18,8 +21,8 @@ type DeploymentConfig struct {
 type UpstreamTarget struct {
 	IP             string `json:"ip"`
 	Port           int    `json:"port"`
-	SNIName        string `json:"sni_name,omitempty"`
-	HealthEndpoint string `json:"health_endpoint,omitempty"`
+	SNIName        string `json:"sni_name"`
+	HealthEndpoint string `json:"health_endpoint"`
 }
 
 type BackendItem struct {
@@ -34,10 +37,11 @@ type APIErrorResponse struct {
 	Code  int    `json:"code"`
 }
 
-func NewUpstreamTarget(ip string, port int, sni string, health string) UpstreamTarget {
-	if sni == "" {
-		sni = ip
+func NewUpstreamTarget(ip string, port int, containerName string, domainSuffix string, health string) UpstreamTarget {
+	if domainSuffix == "" {
+		domainSuffix = DefaultDomainSuffix
 	}
+	sni := fmt.Sprintf("%s.%s", containerName, domainSuffix)
 	if health == "" {
 		health = "/health"
 	}

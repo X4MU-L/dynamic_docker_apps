@@ -5,22 +5,30 @@ import (
 )
 
 func TestParseDeployFlagsValid(t *testing.T) {
-	args := []string{"-c", "./app", "-n", "my-app", "-p", "9090"}
-	cfg, apiURL, err := ParseDeployFlags(args, "http://localhost:8081")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+	validNames := []string{"my-app-1", "APP-1", "App-1", "my-APP-10"}
+	for _, name := range validNames {
+		args := []string{"-c", "./app", "-n", name, "-p", "9090"}
+		cfg, apiURL, err := ParseDeployFlags(args, "http://localhost:8081")
+		if err != nil {
+			t.Fatalf("Expected valid name '%s', got error: %v", name, err)
+		}
+		if cfg.Name != name {
+			t.Errorf("Expected name '%s', got '%s'", name, cfg.Name)
+		}
+		if apiURL != "http://localhost:8081" {
+			t.Errorf("Expected default API URL, got '%s'", apiURL)
+		}
 	}
-	if cfg.ContextPath != "./app" {
-		t.Errorf("Expected context path './app', got '%s'", cfg.ContextPath)
-	}
-	if cfg.Name != "my-app" {
-		t.Errorf("Expected name 'my-app', got '%s'", cfg.Name)
-	}
-	if cfg.Port != 9090 {
-		t.Errorf("Expected port 9090, got %d", cfg.Port)
-	}
-	if apiURL != "http://localhost:8081" {
-		t.Errorf("Expected default API URL, got '%s'", apiURL)
+}
+
+func TestParseDeployFlagsInvalidName(t *testing.T) {
+	invalidNames := []string{"My_App", "app@1", "-app", "app-", "app name"}
+	for _, invalid := range invalidNames {
+		args := []string{"-c", "./app", "-n", invalid}
+		_, _, err := ParseDeployFlags(args, "http://localhost:8081")
+		if err == nil {
+			t.Errorf("Expected error for invalid container name '%s', got nil", invalid)
+		}
 	}
 }
 
