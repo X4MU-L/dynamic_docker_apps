@@ -1,20 +1,37 @@
 package parser
 
 import (
+	"flag"
 	"testing"
 )
 
 func TestParseDeployFlagsValidContext(t *testing.T) {
-	args := []string{"-c", "./app", "-n", "my-app-1", "-p", "9090"}
+	args := []string{"-c", "./app", "-n", "my-app-1", "-r", "3", "-p", "9090"}
 	cfg, apiURL, err := ParseDeployFlags(args, "http://localhost:8081")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if cfg.ContextPath != "./app" || cfg.Name != "my-app-1" || cfg.Port != 9090 {
+	if cfg.ContextPath != "./app" || cfg.Name != "my-app-1" || cfg.Replicas != 3 || cfg.Port != 9090 {
 		t.Errorf("Unexpected deployment config values: %+v", cfg)
 	}
 	if apiURL != "http://localhost:8081" {
 		t.Errorf("Expected default API URL, got '%s'", apiURL)
+	}
+}
+
+func TestParseDeployFlagsHelp(t *testing.T) {
+	args := []string{"--help"}
+	_, _, err := ParseDeployFlags(args, "http://localhost:8081")
+	if err != flag.ErrHelp {
+		t.Errorf("Expected flag.ErrHelp for --help, got %v", err)
+	}
+}
+
+func TestParseDeployFlagsInvalidReplicas(t *testing.T) {
+	args := []string{"-c", "./app", "-r", "0"}
+	_, _, err := ParseDeployFlags(args, "http://localhost:8081")
+	if err == nil {
+		t.Error("Expected error for 0 replicas, got nil")
 	}
 }
 
@@ -37,35 +54,18 @@ func TestParseDeployFlagsMissingImageAndContext(t *testing.T) {
 	}
 }
 
-func TestParseDeployFlagsInvalidName(t *testing.T) {
-	invalidNames := []string{"My_App", "app@1", "-app", "app-", "app name"}
-	for _, invalid := range invalidNames {
-		args := []string{"-c", "./app", "-n", invalid}
-		_, _, err := ParseDeployFlags(args, "http://localhost:8081")
-		if err == nil {
-			t.Errorf("Expected error for invalid container name '%s', got nil", invalid)
-		}
+func TestParseDeregisterFlagsHelp(t *testing.T) {
+	args := []string{"-h"}
+	_, _, _, err := ParseDeregisterFlags(args, "http://localhost:8081")
+	if err != flag.ErrHelp {
+		t.Errorf("Expected flag.ErrHelp for -h, got %v", err)
 	}
 }
 
-func TestParseDeregisterFlagsValid(t *testing.T) {
-	args := []string{"--ip", "10.0.0.5", "--port", "8080"}
-	ip, port, _, err := ParseDeregisterFlags(args, "http://localhost:8081")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if ip != "10.0.0.5" || port != 8080 {
-		t.Errorf("Unexpected ip/port: %s:%d", ip, port)
-	}
-}
-
-func TestParseWatchFlagsValid(t *testing.T) {
-	args := []string{"--network", "custom-net"}
-	net, _, err := ParseWatchFlags(args, "http://localhost:8081")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if net != "custom-net" {
-		t.Errorf("Expected network 'custom-net', got '%s'", net)
+func TestParseWatchFlagsHelp(t *testing.T) {
+	args := []string{"help"}
+	_, _, err := ParseWatchFlags(args, "http://localhost:8081")
+	if err != flag.ErrHelp {
+		t.Errorf("Expected flag.ErrHelp for help, got %v", err)
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -19,7 +20,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// handle help commands and exit
 	cmd := os.Args[1]
 	if cmd == "--help" || cmd == "-h" || cmd == "help" {
 		printUsage()
@@ -34,7 +34,7 @@ func main() {
 	case "deregister":
 		handleDeregister(os.Args[2:], apiURL)
 	case "list":
-		handleList(apiURL)
+		handleList(os.Args[2:], apiURL)
 	case "watch":
 		handleWatch(os.Args[2:], apiURL)
 	default:
@@ -45,7 +45,6 @@ func main() {
 }
 
 func getApiURL() string {
-	// can set the api url via env
 	url := os.Getenv("PINGORA_API_URL")
 	if url == "" {
 		return defaultApiURL
@@ -58,7 +57,7 @@ func printUsage() {
 	fmt.Println("\nUsage:")
 	fmt.Println("  deployer <command> [flags]")
 	fmt.Println("\nCommands:")
-	fmt.Println("  deploy      Build, run container on edge-net, probe readiness, and register with Pingora")
+	fmt.Println("  deploy      Build/pull and run container replicas on edge-net and register with Pingora")
 	fmt.Println("  deregister  Evict an upstream from Pingora by IP and port")
 	fmt.Println("  list        List all active Pingora upstreams")
 	fmt.Println("  watch       Listen for Docker container death events and auto-evict endpoints")
@@ -68,6 +67,9 @@ func printUsage() {
 
 func handleDeploy(args []string, defaultApi string) {
 	cfg, apiURL, err := parser.ParseDeployFlags(args, defaultApi)
+	if err == flag.ErrHelp {
+		os.Exit(0)
+	}
 	if err != nil {
 		logger.Fatal("%v", err)
 	}
@@ -78,6 +80,9 @@ func handleDeploy(args []string, defaultApi string) {
 
 func handleDeregister(args []string, defaultApi string) {
 	ip, port, apiURL, err := parser.ParseDeregisterFlags(args, defaultApi)
+	if err == flag.ErrHelp {
+		os.Exit(0)
+	}
 	if err != nil {
 		logger.Fatal("%v", err)
 	}
@@ -87,7 +92,13 @@ func handleDeregister(args []string, defaultApi string) {
 	logger.Success("Deregistered backend IP %s", ip)
 }
 
-func handleList(defaultApi string) {
+func handleList(args []string, defaultApi string) {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" || arg == "help" {
+			parser.PrintListHelp()
+			os.Exit(0)
+		}
+	}
 	output, err := api_utils.ListUpstreams(defaultApi)
 	if err != nil {
 		logger.Fatal("Failed to list upstreams: %v", err)
@@ -97,6 +108,9 @@ func handleList(defaultApi string) {
 
 func handleWatch(args []string, defaultApi string) {
 	network, apiURL, err := parser.ParseWatchFlags(args, defaultApi)
+	if err == flag.ErrHelp {
+		os.Exit(0)
+	}
 	if err != nil {
 		logger.Fatal("%v", err)
 	}
