@@ -173,6 +173,26 @@ func ExtractContainerIP(containerName, networkName string) (string, error) {
 	return ip, nil
 }
 
+func FindContainerNameByIP(ip string) (string, error) {
+	cmd := exec.Command("docker", "ps", "-q")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	ids := strings.Fields(string(out))
+	for _, id := range ids {
+		cmdInspect := exec.Command("docker", "inspect", "-f", "{{.Name}} {{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", id)
+		inspOut, err := cmdInspect.Output()
+		if err == nil && strings.Contains(string(inspOut), ip) {
+			parts := strings.Fields(string(inspOut))
+			if len(parts) > 0 {
+				return strings.TrimPrefix(parts[0], "/"), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no container found with IP %s", ip)
+}
+
 func StopAndRemoveContainer(containerName string) {
 	cmd := exec.Command("docker", "rm", "-f", containerName)
 	_ = cmd.Run()

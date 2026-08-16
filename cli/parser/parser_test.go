@@ -54,9 +54,39 @@ func TestParseDeployFlagsMissingImageAndContext(t *testing.T) {
 	}
 }
 
+func TestParseDeregisterFlagsValidIP(t *testing.T) {
+	args := []string{"--ip", "10.0.0.5", "--port", "8080"}
+	_, ip, port, stop, _, _, err := ParseDeregisterFlags(args, "http://localhost:8081")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if ip != "10.0.0.5" || port != 8080 || stop != false {
+		t.Errorf("Unexpected ip/port/stop: %s:%d stop=%v", ip, port, stop)
+	}
+}
+
+func TestParseDeregisterFlagsValidNameAndStop(t *testing.T) {
+	args := []string{"-n", "my-container", "-s"}
+	name, ip, _, stop, _, _, err := ParseDeregisterFlags(args, "http://localhost:8081")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if name != "my-container" || ip != "" || stop != true {
+		t.Errorf("Expected name 'my-container' stop=true, got name='%s' stop=%v", name, stop)
+	}
+}
+
+func TestParseDeregisterFlagsMissingNameAndIP(t *testing.T) {
+	args := []string{"--port", "8080"}
+	_, _, _, _, _, _, err := ParseDeregisterFlags(args, "http://localhost:8081")
+	if err == nil {
+		t.Error("Expected error when both name and ip are missing, got nil")
+	}
+}
+
 func TestParseDeregisterFlagsHelp(t *testing.T) {
 	args := []string{"-h"}
-	_, _, _, err := ParseDeregisterFlags(args, "http://localhost:8081")
+	_, _, _, _, _, _, err := ParseDeregisterFlags(args, "http://localhost:8081")
 	if err != flag.ErrHelp {
 		t.Errorf("Expected flag.ErrHelp for -h, got %v", err)
 	}

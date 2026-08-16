@@ -125,32 +125,44 @@ func PrintDeployHelp() {
 	fmt.Println("      --api-url          Pingora Control API URL (default http://localhost:8081)")
 }
 
-func ParseDeregisterFlags(args []string, defaultAPI string) (string, int, string, error) {
+func ParseDeregisterFlags(args []string, defaultAPI string) (string, string, int, bool, string, string, error) {
 	if isHelpRequested(args) {
 		PrintDeregisterHelp()
-		return "", 0, "", flag.ErrHelp
+		return "", "", 0, false, "", "", flag.ErrHelp
 	}
 	fs := flag.NewFlagSet("deregister", flag.ContinueOnError)
-	ip := fs.String("ip", "", "Upstream IP address (required)")
+	name := fs.String("name", "", "Container instance name")
+	fs.StringVar(name, "n", "", "Container instance name (shorthand)")
+	ip := fs.String("ip", "", "Upstream IP address")
 	port := fs.Int("port", 0, "Upstream port")
+	fs.IntVar(port, "p", 0, "Upstream port (shorthand)")
+	stop := fs.Bool("stop", false, "Stop and remove container after deregistering")
+	fs.BoolVar(stop, "s", false, "Stop and remove container after deregistering (shorthand)")
+	network := fs.String("network", "edge-net", "Docker bridge network")
 	apiURL := fs.String("api-url", defaultAPI, "Pingora Control API URL")
 
 	if err := fs.Parse(args); err != nil {
-		return "", 0, "", err
+		return "", "", 0, false, "", "", err
 	}
-	if *ip == "" {
-		return "", 0, "", fmt.Errorf("flag --ip is required for deregister command")
+	nameVal := strings.ToLower(strings.TrimSpace(*name))
+	ipVal := strings.TrimSpace(*ip)
+
+	if nameVal == "" && ipVal == "" {
+		return "", "", 0, false, "", "", fmt.Errorf("either --name (-n) or --ip must be specified for deregister command")
 	}
-	return *ip, *port, *apiURL, nil
+	return nameVal, ipVal, *port, *stop, *network, *apiURL, nil
 }
 
 func PrintDeregisterHelp() {
 	fmt.Println("Usage: deployer deregister [flags]")
-	fmt.Println("\nEvict an upstream from Pingora LB by IP address and optional port.")
+	fmt.Println("\nEvict an upstream from Pingora LB by container name or IP address.")
 	fmt.Println("\nFlags:")
-	fmt.Println("  --ip       Upstream IP address (required)")
-	fmt.Println("  --port     Upstream port")
-	fmt.Println("  --api-url  Pingora Control API URL")
+	fmt.Println("  -n, --name     Container name to resolve IP and evict")
+	fmt.Println("      --ip       Upstream IP address to evict directly")
+	fmt.Println("  -p, --port     Upstream port")
+	fmt.Println("  -s, --stop     Stop and remove container after deregistering (default false)")
+	fmt.Println("      --network  Docker bridge network (default edge-net)")
+	fmt.Println("      --api-url  Pingora Control API URL (default http://localhost:8081)")
 }
 
 func ParseWatchFlags(args []string, defaultAPI string) (string, string, error) {
