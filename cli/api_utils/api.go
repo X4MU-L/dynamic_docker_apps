@@ -171,5 +171,28 @@ func ListUpstreams(apiURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	var upstreams []domain.BackendStatusResponse
+	if err := json.Unmarshal(data, &upstreams); err != nil {
+		return string(data), nil
+	}
+	return FormatUpstreamTable(upstreams), nil
+}
+
+func FormatUpstreamTable(upstreams []domain.BackendStatusResponse) string {
+	if len(upstreams) == 0 {
+		return "No active upstreams registered."
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%-16s %-6s %-26s %-16s %-10s %-8s %-10s\n", "IP ADDRESS", "PORT", "HOSTNAME (SNI)", "HEALTH PROBE", "STATUS", "ACTIVE", "DRAIN (s)")
+	sb.WriteString(strings.Repeat("-", 98))
+	sb.WriteString("\n")
+	for _, u := range upstreams {
+		drainStr := "-"
+		if u.RemainingDrainSecs != nil {
+			drainStr = fmt.Sprintf("%ds", *u.RemainingDrainSecs)
+		}
+		fmt.Fprintf(&sb, "%-16s %-6d %-26s %-16s %-10s %-8d %-10s\n",
+			u.IP, u.Port, u.SNIName, u.HealthEndpoint, strings.ToUpper(u.Status), u.ActiveRequests, drainStr)
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
