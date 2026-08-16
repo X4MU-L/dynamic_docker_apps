@@ -91,7 +91,7 @@ func TestListUpstreamsSuccess(t *testing.T) {
 		MockFunc: func(name string, args ...string) ([]byte, error) {
 			cmdStr := strings.Join(args, " ")
 			if strings.Contains(cmdStr, "/upstreams") {
-				return []byte(`[{"ip":"127.0.0.1","port":8080}]`), nil
+				return []byte(`[{"ip":"127.0.0.1","port":8080,"sni_name":"test.edge.local","health_endpoint":"/health","status":"active","active_requests":0}]`), nil
 			}
 			return []byte(""), nil
 		},
@@ -103,7 +103,7 @@ func TestListUpstreamsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error listing upstreams: %v", err)
 	}
-	if list != `[{"ip":"127.0.0.1","port":8080}]` {
-		t.Errorf("Unexpected list response: %s", list)
+	if !strings.Contains(list, "127.0.0.1") || !strings.Contains(list, "HOSTNAME (SNI)") {
+		t.Errorf("Unexpected table output: %s", list)
 	}
 }
