@@ -102,9 +102,18 @@ mod tests {
             health_endpoint: None,
         };
 
-        assert!(register_upstream_handler(State(state.clone()), Json(payload.clone())).await.is_ok());
-        let err = register_upstream_handler(State(state), Json(payload)).await.unwrap_err();
-        assert_eq!(err, DomainError::BackendAlreadyExists("10.0.0.2:8080".to_string()));
+        assert!(
+            register_upstream_handler(State(state.clone()), Json(payload.clone()))
+                .await
+                .is_ok()
+        );
+        let err = register_upstream_handler(State(state), Json(payload))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            DomainError::BackendAlreadyExists("10.0.0.2:8080".to_string())
+        );
     }
 
     #[tokio::test]
@@ -140,7 +149,10 @@ mod tests {
         let err = deregister_upstream_handler(State(state), Json(dereg_payload))
             .await
             .unwrap_err();
-        assert_eq!(err, DomainError::BackendNotFound("10.0.0.99:8080".to_string()));
+        assert_eq!(
+            err,
+            DomainError::BackendNotFound("10.0.0.99:8080".to_string())
+        );
     }
 
     #[tokio::test]

@@ -60,7 +60,10 @@ pub async fn start_api_server(addr: &str, state: DynamicLBState, mut shutdown: S
         }
     };
 
-    if let Err(e) = axum::serve(listener, app).with_graceful_shutdown(shutdown_signal).await {
+    if let Err(e) = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await
+    {
         tracing::error!("API server error during shutdown: {}", e);
     }
 }
