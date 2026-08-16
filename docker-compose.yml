@@ -69,7 +69,7 @@ services:
       dockerfile: Dockerfile.discover
     container_name: event-watcher
     restart: "no"
-    entrypoint: [ "/app/discover_cli", "--api-url", "http://pingora-lb:8081", "watch", "--network", "edge-net" ]
+    entrypoint: [ "/app/discover_cli", "watch", "--api-url", "http://pingora-lb:8081", "--network", "edge-net" ]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:

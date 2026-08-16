@@ -166,7 +166,7 @@ While `Dynamic Docker Apps` demonstrates high stability and sub-millisecond prox
 Start the full stack (Pingora LB, Sample App backends, and one-shot Init Discovery container):
 
 ```bash
-❯ docker compose --profile all up -d
+❯ docker compose --profile all up -d --build
 [+] Running 4/4
  ✔ Container sample-app-2      Running                                                               0.0s 
  ✔ Container sample-app-1      Running                                                               0.0s 
