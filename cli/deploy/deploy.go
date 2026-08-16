@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"fmt"
+	"strings"
 
 	"dynamic_docker_apps/cli/api_utils"
 	"dynamic_docker_apps/cli/docker_utils"
@@ -16,7 +17,7 @@ func ExecuteDeployment(config domain.DeploymentConfig, apiURL string) (string, e
 		return "", err
 	}
 
-	containerName := config.Name
+	containerName := strings.ToLower(config.Name)
 	if containerName == "" {
 		containerName = domain.GenerateContainerName("app")
 	}
@@ -24,7 +25,7 @@ func ExecuteDeployment(config domain.DeploymentConfig, apiURL string) (string, e
 		return "", fmt.Errorf("container '%s' is already running in Docker", containerName)
 	}
 
-	domainSuffix := config.DomainSuffix
+	domainSuffix := strings.ToLower(config.DomainSuffix)
 	if domainSuffix == "" {
 		domainSuffix = domain.DefaultDomainSuffix
 	}

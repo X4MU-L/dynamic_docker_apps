@@ -26,15 +26,18 @@ func ParseDeployFlags(args []string, defaultAPI string) (domain.DeploymentConfig
 	if err := fs.Parse(args); err != nil {
 		return domain.DeploymentConfig{}, "", err
 	}
-	if err := validateDeployArgs(*contextPath, *name, *domainSuffix); err != nil {
+	nameLower := strings.ToLower(strings.TrimSpace(*name))
+	domainLower := strings.ToLower(strings.TrimSpace(*domainSuffix))
+
+	if err := validateDeployArgs(*contextPath, nameLower, domainLower); err != nil {
 		return domain.DeploymentConfig{}, "", err
 	}
 
 	cfg := domain.DeploymentConfig{
 		ContextPath:    *contextPath,
-		Name:           *name,
+		Name:           nameLower,
 		Network:        *network,
-		DomainSuffix:   *domainSuffix,
+		DomainSuffix:   domainLower,
 		Port:           *port,
 		HealthEndpoint: *healthEp,
 		TimeoutSecs:    *timeout,

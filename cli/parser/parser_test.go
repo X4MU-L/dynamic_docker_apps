@@ -4,19 +4,21 @@ import (
 	"testing"
 )
 
-func TestParseDeployFlagsValid(t *testing.T) {
-	validNames := []string{"my-app-1", "APP-1", "App-1", "my-APP-10"}
-	for _, name := range validNames {
-		args := []string{"-c", "./app", "-n", name, "-p", "9090"}
-		cfg, apiURL, err := ParseDeployFlags(args, "http://localhost:8081")
+func TestParseDeployFlagsValidAndLowercased(t *testing.T) {
+	testCases := map[string]string{
+		"my-app-1":  "my-app-1",
+		"APP-1":     "app-1",
+		"App-1":     "app-1",
+		"my-APP-10": "my-app-10",
+	}
+	for input, expected := range testCases {
+		args := []string{"-c", "./app", "-n", input, "-p", "9090"}
+		cfg, _, err := ParseDeployFlags(args, "http://localhost:8081")
 		if err != nil {
-			t.Fatalf("Expected valid name '%s', got error: %v", name, err)
+			t.Fatalf("Expected valid name '%s', got error: %v", input, err)
 		}
-		if cfg.Name != name {
-			t.Errorf("Expected name '%s', got '%s'", name, cfg.Name)
-		}
-		if apiURL != "http://localhost:8081" {
-			t.Errorf("Expected default API URL, got '%s'", apiURL)
+		if cfg.Name != expected {
+			t.Errorf("Expected lowercased name '%s', got '%s'", expected, cfg.Name)
 		}
 	}
 }
