@@ -4,17 +4,31 @@ use async_trait::async_trait;
 use pingora::http::RequestHeader;
 use pingora::prelude::*;
 use pingora::proxy::{ProxyHttp, Session};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct DynamicProxy {
     pub state: DynamicLBState,
 }
 
-#[derive(Default)]
 pub struct ProxyCtx {
     pub sni_name: Option<Arc<str>>,
+    pub backend_addr: Option<SocketAddr>,
     pub active_req_counter: Option<Arc<AtomicUsize>>,
+    pub start_time: Instant,
+}
+
+impl Default for ProxyCtx {
+    fn default() -> Self {
+        Self {
+            sni_name: None,
+            backend_addr: None,
+            active_req_counter: None,
+            start_time: Instant::now(),
+        }
+    }
 }
 
 impl DynamicProxy {
@@ -47,6 +61,7 @@ impl ProxyHttp for DynamicProxy {
         if let Some((backend, sni_name)) = select_backend(&self.state, key) {
             ctx.sni_name = Some(sni_name.clone());
             if let Some(sock_addr) = backend.addr.as_inet() {
+                ctx.backend_addr = Some(*sock_addr);
                 let addr_map = self.state.by_addr.load();
                 if let Some(item) = addr_map.get(sock_addr) {
                     item.active_requests.fetch_add(1, Ordering::Relaxed);
@@ -77,9 +92,41 @@ impl ProxyHttp for DynamicProxy {
         Ok(())
     }
 
-    async fn logging(&self, _session: &mut Session, _e: Option<&Error>, ctx: &mut Self::CTX) {
+    async fn logging(&self, session: &mut Session, e: Option<&Error>, ctx: &mut Self::CTX) {
         if let Some(counter) = ctx.active_req_counter.take() {
             counter.fetch_sub(1, Ordering::Relaxed);
+        }
+
+        let elapsed = ctx.start_time.elapsed();
+        let sni = ctx.sni_name.as_deref().unwrap_or("unknown");
+        let status = session
+            .response_written()
+            .map(|r| r.status.as_u16())
+            .unwrap_or(0);
+        let method = session.req_header().method.as_str();
+        let uri = session.req_header().uri.path();
+
+        if let Some(err) = e {
+            tracing::error!(
+                "❌ [{}] {} -> backend: {:?} (SNI: {}) | Status: {} | Duration: {:?} | Err: {}",
+                method,
+                uri,
+                ctx.backend_addr,
+                sni,
+                status,
+                elapsed,
+                err
+            );
+        } else {
+            tracing::info!(
+                "🌐 [{}] {} -> backend: {:?} (SNI: {}) | Status: {} | Duration: {:?}",
+                method,
+                uri,
+                ctx.backend_addr,
+                sni,
+                status,
+                elapsed
+            );
         }
     }
 }
