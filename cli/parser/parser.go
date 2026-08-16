@@ -168,6 +168,26 @@ func PrintDeregisterHelp() {
 	fmt.Println("      --api-url        Pingora Control API URL (default http://localhost:8081)")
 }
 
+func ParseDiscoverFlags(args []string, defaultAPI string) (string, error) {
+	if isHelpRequested(args) {
+		PrintDiscoverHelp()
+		return "", flag.ErrHelp
+	}
+	fs := flag.NewFlagSet("discover", flag.ContinueOnError)
+	apiURL := fs.String("api-url", defaultAPI, "Pingora Control API URL")
+	if err := fs.Parse(args); err != nil {
+		return "", err
+	}
+	return *apiURL, nil
+}
+
+func PrintDiscoverHelp() {
+	fmt.Println("Usage: deployer discover [flags]")
+	fmt.Println("\nScan running Docker containers, probe candidate health endpoints, and register active backends.")
+	fmt.Println("\nFlags:")
+	fmt.Println("  --api-url  Pingora Control API URL (default http://localhost:8081)")
+}
+
 func ParseWatchFlags(args []string, defaultAPI string) (string, string, error) {
 	if isHelpRequested(args) {
 		PrintWatchHelp()

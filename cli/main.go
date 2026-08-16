@@ -8,6 +8,7 @@ import (
 
 	"dynamic_docker_apps/cli/api_utils"
 	"dynamic_docker_apps/cli/deploy"
+	"dynamic_docker_apps/cli/discover"
 	"dynamic_docker_apps/cli/docker_utils"
 	"dynamic_docker_apps/cli/logger"
 	"dynamic_docker_apps/cli/parser"
@@ -35,6 +36,8 @@ func main() {
 		handleDeploy(os.Args[2:], apiURL)
 	case "deregister":
 		handleDeregister(os.Args[2:], apiURL)
+	case "discover":
+		handleDiscover(os.Args[2:], apiURL)
 	case "list":
 		handleList(os.Args[2:], apiURL)
 	case "watch":
@@ -61,6 +64,7 @@ func printUsage() {
 	fmt.Println("\nCommands:")
 	fmt.Println("  deploy      Build/pull and run container replicas on edge-net and register with Pingora")
 	fmt.Println("  deregister  Evict an upstream from Pingora by container name or IP address")
+	fmt.Println("  discover    Scan running containers, probe health endpoints, and register active backends")
 	fmt.Println("  list        List all active Pingora upstreams")
 	fmt.Println("  watch       Listen for Docker container death events and auto-evict endpoints")
 	fmt.Println("\nFlags:")
@@ -97,6 +101,19 @@ func handleDeregister(args []string, defaultApi string) {
 			waitForBackendDrain(apiURL, targetIP, port)
 		}
 		stopTargetContainer(targetName, targetIP)
+	}
+}
+
+func handleDiscover(args []string, defaultApi string) {
+	apiURL, err := parser.ParseDiscoverFlags(args, defaultApi)
+	if err == flag.ErrHelp {
+		os.Exit(0)
+	}
+	if err != nil {
+		logger.Fatal("%v", err)
+	}
+	if err := discover.RunCliDiscovery(apiURL); err != nil {
+		logger.Fatal("Auto-discovery failed: %v", err)
 	}
 }
 
