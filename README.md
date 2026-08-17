@@ -166,7 +166,7 @@ While `Dynamic Docker Apps` demonstrates high stability and sub-millisecond prox
 Start the full stack (Pingora LB, Sample App backends, and one-shot Init Discovery container):
 
 ```bash
-❯ docker compose --profile all up -d --build
+❯ docker compose --profile all up -d
 [+] Running 4/4
  ✔ Container sample-app-2      Running                                                               0.0s 
  ✔ Container sample-app-1      Running                                                               0.0s 
@@ -294,37 +294,48 @@ Re-launch the proxy profile. The init container automatically triggers and recon
 
 ## 📦 Bare Container Execution (Without Docker Compose)
 
-To run the system bare using native Docker commands without Docker Compose:
+To run the system manually using native Docker build contexts without Docker Compose:
 
 ### 1. Create Docker Subnet
 ```bash
 docker network create --subnet=172.30.0.0/16 edge-net
 ```
 
-### 2. Run Pingora LB Container Bare
+### 2. Build Container Images from Dockerfiles
+
 ```bash
+# Build Pingora Edge Load Balancer image:
+docker build -t pingora-lb:latest -f Dockerfile.pingora .
+
+# Build One-Shot Auto-Discovery Init image:
+docker build -t pingora-discover:latest -f Dockerfile.discover .
+
+# Build Sample Application Backend image:
+docker build -t sample-app:latest ./sample_app
+```
+
+### 3. Run Containers
+
+```bash
+# Run Pingora LB Container:
 docker run -d \
   --name pingora-lb \
   --net edge-net \
   --ip 172.30.0.2 \
   -p 80:80 \
   -p 8081:8081 \
-  dynamic_docker_apps-pingora-lb:latest
-```
+  pingora-lb:latest
 
-### 3. Run Sample App Containers Bare
-```bash
-docker run -d --name app-1 --net edge-net sample-app:latest
-docker run -d --name app-2 --net edge-net sample-app:latest
-```
+# Run Backend Application Containers:
+docker run -d --name sample-app-1 --net edge-net sample-app:latest
+docker run -d --name sample-app-2 --net edge-net sample-app:latest
 
-### 4. Run One-Shot Init Discovery Container Bare
-```bash
+# Run One-Shot Init Auto-Discovery Container:
 docker run --rm \
   --name pingora-discover \
   --net edge-net \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  dynamic_docker_apps-pingora-discover:latest
+  pingora-discover:latest
 ```
 
 ---
@@ -333,7 +344,7 @@ docker run --rm \
 
 ```text
 Usage:
-  deployer <command> [flags]
+  cli <command> [flags]
 
 Commands:
   deploy      Build/pull and run container replicas on edge-net and register with Pingora
@@ -371,7 +382,7 @@ Gracefully drains in-flight requests or forcefully evicts an upstream from Pingo
 Scans running containers on `edge-net`, probes candidate health endpoints (`/health`, `/healthz`, `/api/health`, `/api/healthz`), and registers active upstreams.
 
 ```bash
-./bin/cli discover --api-url http://localhost:8081
+./bin/cli discover [--api-url http://localhost:8081]
 ```
 
 #### 4. `list`
@@ -385,7 +396,7 @@ Displays a clean ASCII table of all active registered upstreams, IP addresses, p
 Runs a long-running event listener watching Docker daemon `die` and `destroy` events to auto-evict dead containers in real time.
 
 ```bash
-./bin/cli watch --network edge-net
+./bin/cli watch [--network edge-net]
 ```
 
 ---

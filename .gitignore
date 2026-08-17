@@ -6,3 +6,4 @@ target/
 *.txt
 !requirements.txt
 bin/
+.DS_store
